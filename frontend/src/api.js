@@ -1,4 +1,4 @@
-const BASE = "http://localhost:4000/api";
+const BASE = "https://term-pilot.onrender.com/";
 
 export async function getCourses() {
   const r = await fetch(`${BASE}/courses`);
