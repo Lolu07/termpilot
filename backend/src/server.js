@@ -8,6 +8,7 @@ import { loadDB, saveDB, upsertCourse } from "./storage.js";
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
+
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
