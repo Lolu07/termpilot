@@ -1,5 +1,6 @@
 const BASE = "https://term-pilot.onrender.com/";
 
+
 export async function getCourses() {
   const r = await fetch(`${BASE}/courses`);
   return r.json();
