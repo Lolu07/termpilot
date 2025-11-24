@@ -1,5 +1,4 @@
-const BASE = "https://term-pilot.onrender.com/";
-
+const BASE = "https://term-pilot.onrender.com/api";
 
 export async function getCourses() {
   const r = await fetch(`${BASE}/courses`);
