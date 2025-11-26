@@ -1,37 +1,18 @@
-# TermPilot – AI Syllabus-to-Schedule Planner (Easy MVP)
+# TermPilot – AI-Powered Syllabus-to-Schedule Planner
 
-This is a simple, resume-ready MVP of **TermPilot**.
+TermPilot is a simple web application that helps students convert raw syllabus text into a clear, organized study plan. The app extracts assignments and due dates from course materials and displays them in an easy-to-understand dashboard.
 
-### What it does
-1. You paste syllabus text (or extend to PDF upload later).
-2. Backend parses lines with dates into structured tasks.
-3. Frontend shows:
-   - Multi-course dashboard
-   - “Today's Focus”
-   - Week calendar
-   - 8-week workload chart
-   - Task list per course
+## Features
+- Convert syllabus text into structured tasks  
+- Automatically identify assignments and deadlines  
+- Visual task display, including:
+  - Weekly calendar  
+  - “Today’s Focus” section  
+  - Multi-course dashboard  
+  - 8-week workload chart  
+  - Course-specific task lists  
 
-### Tech
-- React + Vite + Recharts (front-end focus)
-- Node.js + Express (API)
-- Local JSON storage (no DB needed for MVP)
-
-### Quick start
-```bash
-# 1) backend
-cd backend
-npm install
-npm run dev
-
-# 2) frontend (new terminal)
-cd ../frontend
-npm install
-npm run dev
-```
-
-### Notes
-- Parser is heuristic to keep the project easy.
-- You can later swap `parseSyllabusText` with an LLM call if you want.
-
-Good luck shipping!
+## Tech Stack
+- **Frontend:** React, Vite, Recharts  
+- **Backend:** Node.js, Express  
+- **Storage:** Local JSON file (simple MVP storage)
