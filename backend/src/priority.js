@@ -1,5 +1,4 @@
 /**
- * Simple explainable priority heuristic.
  * Score uses:
  *  - days until due (closer => higher)
  *  - weight (higher => higher)

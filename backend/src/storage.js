@@ -16,7 +16,6 @@ export function saveDB(db) {
   fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
 }
 
-// Replace or insert course
 export function upsertCourse(courseName, items) {
   const db = loadDB();
   const idx = db.courses.findIndex(c => c.name.toLowerCase() === courseName.toLowerCase());

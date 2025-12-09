@@ -8,8 +8,8 @@ import { uid } from "./util.js";
  *  - 2025-03-18
  *  - 03/18/2025 or 3/18/25
  *  - Mar 18, 2025 (and similar)
- * You can tweak keywords below.
  */
+
 const KEYWORDS = [
   "homework", "hw", "assignment", "quiz",
   "exam", "midterm", "final", "project",
@@ -70,7 +70,7 @@ function inferType(line) {
   return "Task";
 }
 
-// naive effort estimate based on type
+// effort estimate based on type
 function estimateEffortHours(type) {
   switch (type) {
     case "Quiz": return 1;
@@ -116,7 +116,7 @@ export function parseSyllabusText(text, courseName) {
       title: title || `${type} item`,
       due_date: due.toISOString().slice(0,10),
       estimated_effort_hours: est,
-      weight: 10, // default; user can edit later
+      weight: 10, // default
       completed: false
     };
     item.priority_score = priorityScore(item);

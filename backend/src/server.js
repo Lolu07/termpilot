@@ -31,7 +31,7 @@ app.post("/api/courses/from-text", (req, res) => {
   res.json(course);
 });
 
-// Create/replace a course from PDF upload (field name: file)
+// Create/replace a course from PDF upload 
 app.post("/api/courses/from-pdf", upload.single("file"), async (req, res) => {
   try {
     const courseName = req.body.courseName;
@@ -69,7 +69,7 @@ app.patch("/api/items/:id/complete", (req, res) => {
   res.json(updatedItem);
 });
 
-// Reset database (dev helper)
+// Reset database 
 app.post("/api/reset", (req, res) => {
   saveDB({ courses: [] });
   res.json({ ok: true });
