@@ -1,19 +1,23 @@
 import React, { useMemo } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
-function nextWeeks(n=8) {
+function nextWeeks(n = 8) {
   const start = new Date();
-  start.setHours(0,0,0,0);
+  start.setHours(0, 0, 0, 0);
   const arr = [];
-  for (let i=0; i<n; i++) {
+  for (let i = 0; i < n; i++) {
     const wStart = new Date(start);
-    wStart.setDate(start.getDate() + i*7);
+    wStart.setDate(start.getDate() + i * 7);
     const wEnd = new Date(wStart);
     wEnd.setDate(wStart.getDate() + 6);
     arr.push({ wStart, wEnd });
   }
   return arr;
 }
+
+const ACCENT = "#6366f1";
+const WARN = "#f59e0b";
+const DANGER = "#ef4444";
 
 export default function WorkloadChart({ items }) {
   const data = useMemo(() => {
@@ -24,28 +28,38 @@ export default function WorkloadChart({ items }) {
           const d = new Date(it.due_date);
           return d >= w.wStart && d <= w.wEnd && !it.completed;
         })
-        .reduce((s,it)=>s + (it.estimated_effort_hours||0), 0);
-      return {
-        week: `W${idx+1}`,
-        effort: Math.round(effort*10)/10
-      };
+        .reduce((s, it) => s + (it.estimated_effort_hours || 0), 0);
+      return { week: `W${idx + 1}`, effort: Math.round(effort * 10) / 10 };
     });
   }, [items]);
 
   return (
     <div className="card">
-      <h3>Workload Next 8 Weeks (hours)</h3>
-      <div style={{width:"100%", height:220}}>
+      <h3>Workload — Next 8 Weeks</h3>
+      <div style={{ width: "100%", height: 200 }}>
         <ResponsiveContainer>
-          <BarChart data={data}>
-            <XAxis dataKey="week" />
-            <YAxis />
-            <Tooltip />
-            <Bar dataKey="effort" />
+          <BarChart data={data} barCategoryGap="30%">
+            <XAxis dataKey="week" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} unit="h" width={32} />
+            <Tooltip
+              formatter={(v) => [`${v}h`, "Effort"]}
+              contentStyle={{ borderRadius: 8, fontSize: 13 }}
+            />
+            <Bar dataKey="effort" radius={[6, 6, 0, 0]}>
+              {data.map((d, i) => (
+                <Cell
+                  key={i}
+                  fill={d.effort >= 20 ? DANGER : d.effort >= 12 ? WARN : ACCENT}
+                  fillOpacity={0.85}
+                />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <small style={{color:"#64748b"}}>Based on estimated effort per task.</small>
+      <small style={{ color: "var(--text-subtle)" }}>
+        Hours of pending work due each week. Red = high load.
+      </small>
     </div>
   );
 }
