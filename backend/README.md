@@ -1,16 +1,11 @@
-# TermPilot Backend (MVP)
+# TermPilot backend
 
-Simple Express server that:
-- accepts syllabus text or PDF upload
-- parses assignments with a lightweight heuristic parser
-- stores data in a local JSON file (no DB needed)
-- exposes endpoints for the React front-end
+Express API for PDF extraction, Groq-based syllabus parsing, deterministic fallback parsing, editable import previews, server-validated course imports, task prioritization, and course storage.
 
-## Run
 ```bash
-cd backend
-npm install
+cp .env.example .env
+npm ci
 npm run dev
 ```
 
-Server runs on http://localhost:4000
+The server runs at `http://localhost:4000`. Run `npm test` for parser, PDF-layout, validation, and priority regression tests. See the [project README](../README.md) for architecture, API documentation, environment variables, and current limitations.

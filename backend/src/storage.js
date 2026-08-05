@@ -10,7 +10,11 @@ export function loadDB() {
     fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
     fs.writeFileSync(DB_PATH, JSON.stringify({ courses: [] }, null, 2));
   }
-  return JSON.parse(fs.readFileSync(DB_PATH, "utf-8"));
+  const db = JSON.parse(fs.readFileSync(DB_PATH, "utf-8"));
+  for (const course of db.courses || []) {
+    for (const item of course.items || []) item.priority_score = priorityScore(item);
+  }
+  return db;
 }
 
 export function saveDB(db) {
@@ -18,12 +22,13 @@ export function saveDB(db) {
   fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
 }
 
-export function upsertCourse(courseName, items) {
+export function upsertCourse(courseName, items, parseInfo = null) {
   const db = loadDB();
   const idx = db.courses.findIndex(c => c.name.toLowerCase() === courseName.toLowerCase());
   const course = {
     name: courseName,
     items: items.map(it => ({ ...it, priority_score: priorityScore(it) })),
+    ...(parseInfo ? { parse_info: parseInfo } : {}),
   };
 
   if (idx >= 0) db.courses[idx] = course;

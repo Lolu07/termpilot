@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import { TrashIcon } from "./Icons.jsx";
 
 function completionForCourse(course) {
   const total = course.items.length;
@@ -10,7 +11,11 @@ function completionForCourse(course) {
 export default function CourseDashboard({ courses, selectedCourse, onSelectCourse, onDeleteCourse }) {
   const cards = useMemo(() => courses.map(c => {
     const { total, done, pct } = completionForCourse(c);
-    const upcoming = c.items.filter(i => !i.completed).slice(0, 3);
+    const upcoming = c.items
+      .filter(i => !i.completed)
+      .slice()
+      .sort((a, b) => a.due_date.localeCompare(b.due_date))
+      .slice(0, 3);
     return { ...c, total, done, pct, upcoming };
   }), [courses]);
 
@@ -22,34 +27,45 @@ export default function CourseDashboard({ courses, selectedCourse, onSelectCours
           <div
             key={c.name}
             className={`course-card${c.name === selectedCourse ? " selected" : ""}`}
-            onClick={() => onSelectCourse(c.name)}
           >
-            <div className="course-card-header">
-              <span className="course-name">{c.name}</span>
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <span className="pill">{c.done}/{c.total}</span>
-                <div className="course-actions" onClick={e => e.stopPropagation()}>
-                  <button
-                    className="btn-icon"
-                    title="Delete course"
-                    onClick={() => onDeleteCourse(c.name)}
-                  >
-                    ✕
-                  </button>
+            <button
+              className="course-card-main"
+              type="button"
+              onClick={() => onSelectCourse(c.name)}
+              aria-pressed={c.name === selectedCourse}
+            >
+              <div className="course-card-header">
+                <span className="course-name">{c.name}</span>
+                <div className="course-badges">
+                  <span className="pill">{c.done}/{c.total}</span>
+                  {c.parse_info && (
+                    <span className="pill accent" title={`${c.parse_info.item_count} items extracted`}>
+                      {c.parse_info.engine === "groq" ? "AI" : "Fallback"}
+                    </span>
+                  )}
                 </div>
               </div>
-            </div>
-            <div className="progress">
-              <div style={{ width: `${c.pct}%` }} />
-            </div>
-            <div className="upcoming-chips">
-              {c.upcoming.map(u => (
-                <span key={u.id} className="pill">{u.title.slice(0, 26)}</span>
-              ))}
-              {c.upcoming.length === 0 && (
-                <span className="pill green">All caught up</span>
-              )}
-            </div>
+              <div className="progress" aria-label={`${c.pct}% complete`}>
+                <div style={{ width: `${c.pct}%` }} />
+              </div>
+              <div className="upcoming-chips">
+                {c.upcoming.map(u => (
+                  <span key={u.id} className="pill">{u.title.slice(0, 26)}</span>
+                ))}
+                {c.upcoming.length === 0 && (
+                  <span className="pill green">All caught up</span>
+                )}
+              </div>
+            </button>
+            <button
+              className="course-delete btn-icon"
+              type="button"
+              title="Delete course"
+              aria-label={`Delete ${c.name}`}
+              onClick={() => onDeleteCourse(c.name)}
+            >
+              <TrashIcon size={16} />
+            </button>
           </div>
         ))}
         {cards.length === 0 && (

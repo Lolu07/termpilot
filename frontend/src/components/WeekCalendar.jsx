@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import { formatDateKey } from "../dateUtils.js";
 
 function startOfWeek(d) {
   const date = new Date(d);
@@ -10,7 +11,7 @@ function startOfWeek(d) {
 }
 
 export default function WeekCalendar({ items }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = formatDateKey(new Date());
 
   const weekDays = useMemo(() => {
     const start = startOfWeek(new Date());
@@ -34,8 +35,10 @@ export default function WeekCalendar({ items }) {
       <h3>This Week</h3>
       <div className="calendar">
         {weekDays.map(d => {
-          const key = d.toISOString().slice(0, 10);
-          const dayItems = (byDate[key] || []).slice(0, 4);
+          const key = formatDateKey(d);
+          const allDayItems = byDate[key] || [];
+          const dayItems = allDayItems.slice(0, 4);
+          const hiddenCount = Math.max(0, allDayItems.length - dayItems.length);
           const isToday = key === today;
           return (
             <div className={`day${isToday ? " today" : ""}`} key={key}>
@@ -47,7 +50,10 @@ export default function WeekCalendar({ items }) {
                   {it.title.slice(0, 18)}
                 </div>
               ))}
-              {dayItems.length === 0 && (
+              {hiddenCount > 0 && (
+                <div className="task-more" title={allDayItems.slice(4).map(item => item.title).join(", ")}>+{hiddenCount} more</div>
+              )}
+              {allDayItems.length === 0 && (
                 <div style={{ color: "var(--text-subtle)", fontSize: 11, marginTop: 4 }}>—</div>
               )}
             </div>

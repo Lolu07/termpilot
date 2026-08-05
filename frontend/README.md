@@ -1,13 +1,11 @@
-# TermPilot Frontend (MVP)
+# TermPilot frontend
 
-Vite + React UI.
+React and Vite interface for syllabus upload, editable review-before-save, course dashboards, deadline prioritization, and workload visualization.
 
-## Run
 ```bash
-cd frontend
-npm install
+cp .env.example .env
+npm ci
 npm run dev
 ```
 
-App runs on http://localhost:5173
-Ensure backend is running on port 4000.
+The app runs at `http://localhost:5173`. Use `npm test` for date-logic tests and `npm run build` for a production build. See the [project README](../README.md) for full setup and architecture details.

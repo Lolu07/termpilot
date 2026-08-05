@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { parseDateKey } from "../dateUtils.js";
 
 function nextWeeks(n = 8) {
   const start = new Date();
@@ -15,9 +16,9 @@ function nextWeeks(n = 8) {
   return arr;
 }
 
-const ACCENT = "#6366f1";
-const WARN = "#f59e0b";
-const DANGER = "#ef4444";
+const ACCENT = "var(--chart-normal)";
+const WARN = "var(--chart-warning)";
+const DANGER = "var(--chart-danger)";
 
 export default function WorkloadChart({ items }) {
   const data = useMemo(() => {
@@ -25,11 +26,15 @@ export default function WorkloadChart({ items }) {
     return weeks.map((w, idx) => {
       const effort = items
         .filter(it => {
-          const d = new Date(it.due_date);
+          const d = parseDateKey(it.due_date);
+          if (!d) return false;
           return d >= w.wStart && d <= w.wEnd && !it.completed;
         })
         .reduce((s, it) => s + (it.estimated_effort_hours || 0), 0);
-      return { week: `W${idx + 1}`, effort: Math.round(effort * 10) / 10 };
+      return {
+        week: w.wStart.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        effort: Math.round(effort * 10) / 10,
+      };
     });
   }, [items]);
 

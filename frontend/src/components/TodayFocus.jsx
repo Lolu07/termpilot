@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import { daysFromToday, formatFriendlyDate } from "../dateUtils.js";
 
 function label(score) {
   if (score >= 220) return ["Critical", "red"];
@@ -7,14 +8,12 @@ function label(score) {
 }
 
 export default function TodayFocus({ items, onComplete }) {
-  const today = new Date().toISOString().slice(0, 10);
-
   const focus = useMemo(() => {
     return items
-      .filter(i => !i.completed && i.due_date >= today)
+      .filter(i => !i.completed)
       .sort((a, b) => b.priority_score - a.priority_score)
       .slice(0, 6);
-  }, [items, today]);
+  }, [items]);
 
   return (
     <div className="card">
@@ -22,16 +21,19 @@ export default function TodayFocus({ items, onComplete }) {
       <div className="items">
         {focus.map(it => {
           const [text, color] = label(it.priority_score);
-          const dueIn = Math.max(0, Math.ceil((new Date(it.due_date) - new Date()) / (1000 * 60 * 60 * 24)));
+          const dueIn = daysFromToday(it.due_date);
+          const dueLabel = dueIn === null ? "date unavailable" : dueIn < 0
+            ? `${Math.abs(dueIn)}d overdue`
+            : dueIn === 0 ? "due today!" : `${dueIn}d left`;
           return (
-            <div key={it.id} className="item-row" style={{ gridTemplateColumns: "2fr 1fr 1fr auto" }}>
+            <div key={it.id} className="item-row focus-row">
               <div>
                 <div className="item-title">{it.title}</div>
                 <small>{it.courseName} · {it.item_type}</small>
               </div>
               <div>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>{it.due_date}</div>
-                <small>{dueIn === 0 ? "due today!" : `${dueIn}d left`}</small>
+                <time className="item-date" dateTime={it.due_date}>{formatFriendlyDate(it.due_date)}</time>
+                <small className={dueIn !== null && dueIn < 0 ? "overdue-text" : ""}>{dueLabel}</small>
               </div>
               <div>
                 <span className={`pill ${color}`}>{text}</span>
