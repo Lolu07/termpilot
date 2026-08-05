@@ -1,8 +1,7 @@
 begin;
 
--- TermPilot's first persistent, per-user data model.
--- This migration is additive: the current Express application continues to use
--- backend/src/data/db.json until the application is explicitly switched over.
+-- TermPilot's persistent, per-user data model. The Express runtime depends on
+-- this schema; the former shared JSON store is no longer used.
 
 create extension if not exists pgcrypto with schema extensions;
 
