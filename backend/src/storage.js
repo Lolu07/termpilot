@@ -14,6 +14,7 @@ export function loadDB() {
 }
 
 export function saveDB(db) {
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
 }
 
