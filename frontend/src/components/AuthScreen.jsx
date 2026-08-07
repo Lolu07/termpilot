@@ -5,14 +5,33 @@ export default function AuthScreen({
   dark,
   onToggleDark,
   onRequestLink,
+  onStartDemo,
   notice = "",
   configurationError = "",
 }) {
   const [email, setEmail] = useState("");
   const [sentTo, setSentTo] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [demoBusy, setDemoBusy] = useState(false);
+  const [emailError, setEmailError] = useState("");
+  const [demoError, setDemoError] = useState("");
   const emailRef = useRef(null);
+  const demoInFlightRef = useRef(false);
+
+  async function handleDemo() {
+    if (configurationError || demoInFlightRef.current) return;
+    demoInFlightRef.current = true;
+    setDemoBusy(true);
+    setDemoError("");
+    try {
+      await onStartDemo();
+    } catch (requestError) {
+      setDemoError(requestError.message || "We could not start the live demo. Please try again.");
+    } finally {
+      demoInFlightRef.current = false;
+      setDemoBusy(false);
+    }
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -20,12 +39,12 @@ export default function AuthScreen({
     if (!normalizedEmail || configurationError) return;
 
     setBusy(true);
-    setError("");
+    setEmailError("");
     try {
       await onRequestLink(normalizedEmail);
       setSentTo(normalizedEmail);
     } catch (requestError) {
-      setError(requestError.message || "We could not send the sign-in link. Please try again.");
+      setEmailError(requestError.message || "We could not send the sign-in link. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -33,7 +52,8 @@ export default function AuthScreen({
 
   function useDifferentEmail() {
     setSentTo("");
-    setError("");
+    setEmailError("");
+    setDemoError("");
     requestAnimationFrame(() => emailRef.current?.focus());
   }
 
@@ -80,7 +100,7 @@ export default function AuthScreen({
         </section>
 
         <section className="auth-panel" aria-labelledby="sign-in-heading">
-          <div className="auth-panel-topline"><span>Secure access</span><span className="auth-live-dot">Online</span></div>
+          <div className="auth-panel-topline"><span>Choose your route</span><span className="auth-live-dot">Online</span></div>
           {sentTo ? (
             <div className="auth-sent" role="status">
               <div className="auth-mail-mark" aria-hidden="true">↗</div>
@@ -93,10 +113,32 @@ export default function AuthScreen({
             </div>
           ) : (
             <form className="auth-form" onSubmit={handleSubmit}>
-              <div>
-                <div className="eyebrow">Welcome aboard</div>
-                <h2 id="sign-in-heading">Sign in to your workspace</h2>
-                <p>No password to remember. We’ll email you a secure magic link.</p>
+              <div className="demo-entry">
+                <div className="eyebrow">Interactive product demo</div>
+                <h2 id="sign-in-heading">Explore TermPilot—no account required.</h2>
+                <p>
+                  Launch a private, preloaded workspace and try the complete workflow:
+                  syllabus import, editable AI review, priority planning, and task completion.
+                </p>
+
+                <div className="demo-feature-strip" aria-label="Live demo features">
+                  <span><strong>01</strong> Import</span>
+                  <span><strong>02</strong> Review</span>
+                  <span><strong>03</strong> Plan</span>
+                </div>
+
+                <button
+                  className="demo-submit"
+                  type="button"
+                  onClick={handleDemo}
+                  disabled={demoBusy || busy || Boolean(configurationError)}
+                >
+                  {demoBusy
+                    ? <span className="loading-text"><span className="spinner" /> Preparing live demo…</span>
+                    : <span>Explore the live demo <ArrowUpRightIcon size={16} /></span>}
+                </button>
+                <small className="demo-trust">No email · Isolated session · Full feature access · Reset anytime</small>
+                {demoError && <div className="auth-alert error" role="alert">{demoError}</div>}
               </div>
 
               {(notice || configurationError) && (
@@ -104,6 +146,14 @@ export default function AuthScreen({
                   {configurationError || notice}
                 </div>
               )}
+
+              <div className="auth-divider"><span>or create your own persistent workspace</span></div>
+
+              <div className="auth-email-intro">
+                <div className="eyebrow">Private workspace</div>
+                <h3>Keep your courses and progress</h3>
+                <p>No password to remember. We’ll email you a secure magic link.</p>
+              </div>
 
               <label className="auth-email-field">
                 <span>Email address</span>
@@ -115,16 +165,15 @@ export default function AuthScreen({
                   placeholder="you@university.edu"
                   value={email}
                   onChange={event => setEmail(event.target.value)}
-                  disabled={busy || Boolean(configurationError)}
+                  disabled={busy || demoBusy || Boolean(configurationError)}
                   required
-                  autoFocus
                 />
               </label>
 
-              {error && <div className="auth-alert error" role="alert">{error}</div>}
+              {emailError && <div className="auth-alert error" role="alert">{emailError}</div>}
 
-              <button className="auth-submit" type="submit" disabled={busy || !email.trim() || Boolean(configurationError)}>
-                {busy ? <span className="loading-text"><span className="spinner" /> Sending secure link…</span> : <span>Continue with email <ArrowUpRightIcon size={16} /></span>}
+              <button className="auth-submit" type="submit" disabled={busy || demoBusy || !email.trim() || Boolean(configurationError)}>
+                {busy ? <span className="loading-text"><span className="spinner" /> Sending secure link…</span> : <span>Send secure sign-in link <ArrowUpRightIcon size={16} /></span>}
               </button>
               <small className="auth-privacy">Your courses are isolated to your account and synced securely.</small>
             </form>

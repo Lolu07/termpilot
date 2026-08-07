@@ -16,6 +16,16 @@ function authenticated(req, _res, next) {
   next();
 }
 
+function anonymousAuthenticated(req, _res, next) {
+  req.auth = {
+    userId,
+    token: "demo-token",
+    claims: { sub: userId, role: "authenticated", is_anonymous: true },
+  };
+  req.supabase = requestClient;
+  next();
+}
+
 function silentLogger() {
   return {};
 }
@@ -72,6 +82,8 @@ test("every application API except health is behind authentication", async () =>
   });
   const cases = [
     ["GET", "/api/courses"],
+    ["POST", "/api/demo/bootstrap"],
+    ["POST", "/api/demo/reset"],
     ["POST", "/api/parse/text"],
     ["POST", "/api/parse/pdf"],
     ["POST", "/api/courses/import"],
@@ -98,6 +110,160 @@ test("every application API except health is behind authentication", async () =>
       assert.equal((await json(response)).code, "AUTH_REQUIRED");
     }
   });
+});
+
+test("only verified anonymous sessions can create or reset demo data", async () => {
+  let repositoryCalls = 0;
+  const app = createApp({
+    authenticate: authenticated,
+    repository: {
+      async listCourses() { repositoryCalls += 1; return []; },
+      async deleteOwnData() { repositoryCalls += 1; },
+      async importReviewedCourse() { repositoryCalls += 1; },
+    },
+    env: {},
+    logger: silentLogger(),
+  });
+
+  await withServer(app, async base => {
+    for (const pathname of ["/api/demo/bootstrap", "/api/demo/reset"]) {
+      const response = await fetch(`${base}${pathname}`, { method: "POST" });
+      assert.equal(response.status, 403);
+      assert.equal((await json(response)).code, "DEMO_ONLY");
+    }
+  });
+  assert.equal(repositoryCalls, 0);
+});
+
+test("demo bootstrap seeds an isolated showcase and is idempotent", async () => {
+  const calls = [];
+  let courses = [];
+  const repository = {
+    async listCourses(client, ownerId) {
+      calls.push(["list", client, ownerId]);
+      return courses;
+    },
+    async importReviewedCourse(client, ownerId, input) {
+      calls.push(["import", client, ownerId, input]);
+      const course = {
+        id: `${courses.length + 2}`.repeat(8).slice(0, 8) + "-2222-4222-8222-222222222222",
+        name: input.courseName,
+        parse_info: input.parseInfo,
+        items: input.items,
+      };
+      courses = [...courses, course];
+      return { course, created: true };
+    },
+  };
+  const app = createApp({
+    authenticate: anonymousAuthenticated,
+    repository,
+    env: {},
+    logger: silentLogger(),
+  });
+
+  await withServer(app, async base => {
+    const first = await fetch(`${base}/api/demo/bootstrap`, { method: "POST" });
+    assert.equal(first.status, 201);
+    assert.equal(first.headers.get("cache-control"), "no-store");
+    const firstPayload = await json(first);
+    assert.equal(firstPayload.seeded, true);
+    assert.equal(firstPayload.courses.length, 2);
+    assert.equal(firstPayload.courses.flatMap(course => course.items).length, 9);
+
+    const second = await fetch(`${base}/api/demo/bootstrap`, { method: "POST" });
+    assert.equal(second.status, 200);
+    assert.equal((await json(second)).seeded, false);
+  });
+
+  const imports = calls.filter(call => call[0] === "import");
+  assert.equal(imports.length, 2);
+  assert.ok(imports.every(call => call[1] === requestClient && call[2] === userId));
+  assert.ok(imports.every(call => call[3].parseInfo.demo_seed === true));
+});
+
+test("demo reset deletes and restores only the verified demo user's workspace", async () => {
+  const calls = [];
+  let courses = [{ id: courseId, name: "Changed demo course", items: [] }];
+  const repository = {
+    async deleteOwnData(client, ownerId) {
+      calls.push(["delete", client, ownerId]);
+      courses = [];
+    },
+    async importReviewedCourse(client, ownerId, input) {
+      calls.push(["import", client, ownerId, input.courseName]);
+      const course = { id: crypto.randomUUID(), name: input.courseName, items: input.items };
+      courses.push(course);
+      return { course, created: true };
+    },
+    async listCourses(client, ownerId) {
+      calls.push(["list", client, ownerId]);
+      return courses;
+    },
+  };
+  const app = createApp({
+    authenticate: anonymousAuthenticated,
+    repository,
+    env: {},
+    logger: silentLogger(),
+  });
+
+  await withServer(app, async base => {
+    const response = await fetch(`${base}/api/demo/reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: "99999999-9999-4999-8999-999999999999" }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await json(response);
+    assert.equal(payload.reset, true);
+    assert.equal(payload.courses.length, 2);
+  });
+
+  assert.equal(calls[0][0], "delete");
+  assert.ok(calls.every(call => call[1] === requestClient && call[2] === userId));
+});
+
+test("anonymous demos receive a tighter parser limit without losing parser access", async () => {
+  let parseCalls = 0;
+  const app = createApp({
+    authenticate: anonymousAuthenticated,
+    repository: {},
+    parseSyllabusFn: async () => {
+      parseCalls += 1;
+      return {
+        items: [{
+          title: "Demo task",
+          due_date: "2026-09-08",
+          item_type: "Task",
+          weight: 0,
+          estimated_effort_hours: 1,
+        }],
+        meta: { engine: "fallback", item_count: 1 },
+      };
+    },
+    env: {},
+    logger: silentLogger(),
+  });
+
+  await withServer(app, async base => {
+    for (let index = 0; index < 5; index += 1) {
+      const response = await fetch(`${base}/api/parse/text`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ courseName: "Demo", text: `Task ${index} due 2026-09-08` }),
+      });
+      assert.equal(response.status, 200);
+    }
+    const limited = await fetch(`${base}/api/parse/text`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ courseName: "Demo", text: "Another task due 2026-09-08" }),
+    });
+    assert.equal(limited.status, 429);
+    assert.equal((await json(limited)).code, "RATE_LIMITED");
+  });
+  assert.equal(parseCalls, 5);
 });
 
 test("reviewed import strips client-owned fields and returns a complete course", async () => {

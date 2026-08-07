@@ -107,6 +107,7 @@ test("review sanitizers drop IDs, ownership, completion, raw content, and unknow
     filename: " syllabus.pdf ",
     request_id: "request-1",
     warning: "review this",
+    demo_seed: true,
     raw_text: "secret",
     nested: { raw_text: "also secret" },
   }, 1);
@@ -121,6 +122,7 @@ test("review sanitizers drop IDs, ownership, completion, raw content, and unknow
     filename: "syllabus.pdf",
     request_id: "request-1",
     warning: "review this",
+    demo_seed: true,
   });
 });
 

@@ -10,6 +10,7 @@ import { hasUsablePdfText, normalizeExtractedText, renderPdfPage } from "./pdfTe
 import { isReplacementConfirmed, validateReviewedImport } from "./reviewValidation.js";
 import { createSupabaseAuthFromEnv } from "./auth.js";
 import { createSupabaseRepository, RepositoryError } from "./repository.js";
+import { buildDemoCourses } from "./demoWorkspace.js";
 import {
   isUuid,
   normalizeItemPatch,
@@ -23,6 +24,8 @@ const MAX_PDF_BYTES = 10 * 1024 * 1024;
 const MAX_PDF_PAGES = 75;
 const MAX_SYLLABUS_CHARACTERS = 150_000;
 const PARSE_LIMIT = 20;
+const DEMO_PARSE_LIMIT = 5;
+const DEMO_IP_PARSE_LIMIT = 15;
 const PARSE_WINDOW_MS = 15 * 60 * 1000;
 
 const upload = multer({
@@ -100,19 +103,81 @@ export function createApp({
 
   function parseRateLimit(req, res, next) {
     const now = Date.now();
-    const key = req.auth?.userId || req.ip || "unknown";
-    const recent = (parseRequests.get(key) || [])
-      .filter(timestamp => now - timestamp < PARSE_WINDOW_MS);
-    if (recent.length >= PARSE_LIMIT) {
+    const anonymous = req.auth?.claims?.is_anonymous === true;
+    const buckets = [
+      [`user:${req.auth?.userId || "unknown"}`, anonymous ? DEMO_PARSE_LIMIT : PARSE_LIMIT],
+      ...(anonymous ? [[`demo-ip:${req.ip || "unknown"}`, DEMO_IP_PARSE_LIMIT]] : []),
+    ];
+
+    const limited = buckets.some(([key, limit]) => {
+      const recent = (parseRequests.get(key) || [])
+        .filter(timestamp => now - timestamp < PARSE_WINDOW_MS);
+      parseRequests.set(key, recent);
+      return recent.length >= limit;
+    });
+    if (limited) {
       return res.status(429).json({
-        error: "Too many parsing requests. Please wait a few minutes and try again.",
+        error: anonymous
+          ? "This demo has reached its short-term AI extraction limit. Please wait a few minutes and try again."
+          : "Too many parsing requests. Please wait a few minutes and try again.",
         code: "RATE_LIMITED",
       });
     }
-    recent.push(now);
-    parseRequests.set(key, recent);
+    for (const [key] of buckets) parseRequests.get(key).push(now);
     return next();
   }
+
+  function isAnonymousDemo(req) {
+    return req.auth?.claims?.is_anonymous === true;
+  }
+
+  async function seedDemoWorkspace(req, existingCourses = []) {
+    let seeded = false;
+    const existingNames = new Set(existingCourses.map(course => course.name.toLowerCase()));
+    for (const demoCourse of buildDemoCourses()) {
+      if (existingNames.has(demoCourse.courseName.toLowerCase())) continue;
+      try {
+        const result = await repository.importReviewedCourse(
+          req.supabase,
+          req.auth.userId,
+          demoCourse,
+        );
+        seeded = result.created === true || seeded;
+      } catch (error) {
+        // React StrictMode and two quick browser requests can race while the
+        // first demo is being created. A name conflict means another request
+        // already created that canonical course, so the final list is valid.
+        if (!(error instanceof RepositoryError) || error.code !== "COURSE_EXISTS") throw error;
+      }
+    }
+    const courses = await repository.listCourses(req.supabase, req.auth.userId);
+    return { courses, seeded };
+  }
+
+  function demoOnly(req, res) {
+    if (isAnonymousDemo(req)) return true;
+    res.status(403).json({
+      error: "This action is available only inside a live demo workspace.",
+      code: "DEMO_ONLY",
+    });
+    return false;
+  }
+
+  app.post("/api/demo/bootstrap", asyncRoute(async (req, res) => {
+    if (!demoOnly(req, res)) return;
+    res.setHeader("Cache-Control", "no-store");
+    const existing = await repository.listCourses(req.supabase, req.auth.userId);
+    const result = await seedDemoWorkspace(req, existing);
+    return res.status(result.seeded ? 201 : 200).json(result);
+  }));
+
+  app.post("/api/demo/reset", asyncRoute(async (req, res) => {
+    if (!demoOnly(req, res)) return;
+    res.setHeader("Cache-Control", "no-store");
+    await repository.deleteOwnData(req.supabase, req.auth.userId);
+    const result = await seedDemoWorkspace(req);
+    return res.json({ ...result, reset: true });
+  }));
 
   app.get("/api/courses", asyncRoute(async (req, res) => {
     const courses = await repository.listCourses(req.supabase, req.auth.userId);

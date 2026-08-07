@@ -17,6 +17,7 @@ Important deadlines are often buried in long documents and inconsistent tables. 
 - Editable review checkpoint before any extracted task is persisted
 - Conflict-safe course imports that require explicit confirmation before replacement
 - Passwordless Supabase Auth with a private workspace for every user
+- One-click, full-featured recruiter demo with a separate anonymous RLS workspace per visitor
 - PostgreSQL persistence protected by owner-scoped Row Level Security
 - Parser provenance, page count, and extraction metadata in API responses
 - Clear errors for scanned, damaged, oversized, and unsupported PDFs
@@ -66,6 +67,8 @@ cd termpilot
 
 Apply [the Supabase migration](supabase/migrations/20260805000100_auth_and_persistence.sql) in a development project before starting the app. Then configure `http://localhost:5173/**` as an allowed Auth redirect URL. The complete setup and production checklist is in [docs/SUPABASE_MIGRATION.md](docs/SUPABASE_MIGRATION.md).
 
+Enable anonymous sign-ins in Supabase Auth for the interactive demo. Each demo visitor receives a unique authenticated session, so the same owner-scoped RLS policies isolate both demo and permanent workspaces.
+
 Start the backend:
 
 ```bash
@@ -114,6 +117,8 @@ Frontend:
 | --- | --- | --- |
 | `GET` | `/api/health` | Public process health and non-secret configuration status |
 | `GET` | `/api/courses` | List courses and tasks |
+| `POST` | `/api/demo/bootstrap` | Seed an empty anonymous demo workspace |
+| `POST` | `/api/demo/reset` | Restore the anonymous demo showcase |
 | `POST` | `/api/parse/text` | Preview tasks from pasted syllabus text without saving |
 | `POST` | `/api/parse/pdf` | Preview tasks from a PDF without saving |
 | `POST` | `/api/courses/import` | Validate and save a reviewed import |
@@ -125,6 +130,8 @@ Frontend:
 | `DELETE` | `/api/account/data` | Delete every course belonging to the signed-in user |
 
 Every endpoint except `/api/health` requires `Authorization: Bearer <Supabase access token>`. Express verifies the token, derives the user ID from its signed claims, and performs each database request with that user's RLS context.
+
+The demo endpoints additionally require Supabase's signed `is_anonymous: true` claim. A regular account cannot invoke them, and a client-provided user ID is never trusted.
 
 A successful parse includes non-secret provenance:
 
@@ -155,11 +162,12 @@ The automated regression suite covers authentication middleware, owner-scoped re
 - Syllabus text is sent to Groq for extraction. TermPilot does not persist the raw syllabus text, but users should avoid uploading documents containing information they do not want processed by the AI provider.
 - Image-only or scanned PDFs are detected and rejected with guidance; OCR is not yet included.
 - Course and task rows are isolated by Supabase Auth ownership and PostgreSQL Row Level Security. Uploaded PDF bytes and raw syllabus text are not stored.
+- Live-demo changes belong to a temporary anonymous account and may be cleared. Demo users should not upload sensitive documents, and demo work is not transferred to a permanent account.
 - AI-extracted deadlines should always be reviewed against the original syllabus.
 
 ## Roadmap
 
-- Google OAuth and a curated read-only recruiter demo workspace
+- Google OAuth and optional anonymous-to-permanent account linking
 - OCR support for scanned syllabi
 - Calendar export (`.ics`) and planned study sessions before each deadline
 - A sanitized multi-syllabus benchmark with published extraction accuracy

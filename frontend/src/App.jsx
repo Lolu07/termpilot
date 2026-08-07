@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   configureApiAuth,
+  bootstrapDemoWorkspace,
   getCourses,
   importReviewedCourse,
   markComplete,
@@ -10,6 +11,7 @@ import {
   previewSyllabusText,
   createItem as apiCreateItem,
   deleteAccountData,
+  resetDemoWorkspace,
   isApiConfigured,
 } from "./api.js";
 import CourseDashboard from "./components/CourseDashboard.jsx";
@@ -23,7 +25,9 @@ import { formatFriendlyDate } from "./dateUtils.js";
 import { ArrowUpRightIcon, MoonIcon, SunIcon, TrashIcon } from "./components/Icons.jsx";
 import ConfirmDialog from "./components/ConfirmDialog.jsx";
 import AuthScreen, { AuthLoadingScreen } from "./components/AuthScreen.jsx";
+import DemoBanner from "./components/DemoBanner.jsx";
 import { getMagicLinkRedirectUrl, getSupabaseClient, isSupabaseConfigured } from "./auth/supabase.js";
+import { demoAuthErrorMessage, isDemoSession } from "./auth/demo.js";
 import { createUserScope } from "./auth/userScope.js";
 
 const WorkloadChart = lazy(() => import("./components/WorkloadChart.jsx"));
@@ -202,8 +206,13 @@ export default function App() {
     const requestScope = userScopeRef.current.capture();
     setWorkspaceLoading(true);
     getCourses()
-      .then(data => {
-        if (active && userScopeRef.current.isCurrent(requestScope)) syncCourses(data);
+      .then(async data => {
+        let nextCourses = data;
+        if (isDemoSession(session) && data.length === 0) {
+          const demo = await bootstrapDemoWorkspace();
+          nextCourses = demo.courses;
+        }
+        if (active && userScopeRef.current.isCurrent(requestScope)) syncCourses(nextCourses);
       })
       .catch(error => {
         if (active && userScopeRef.current.isCurrent(requestScope) && error.status !== 401) {
@@ -214,7 +223,7 @@ export default function App() {
         if (active && userScopeRef.current.isCurrent(requestScope)) setWorkspaceLoading(false);
       });
     return () => { active = false; };
-  }, [authReady, session?.user?.id, syncCourses, toast]);
+  }, [authReady, session?.user?.id, session?.user?.is_anonymous, syncCourses, toast]);
 
   const allItems = useMemo(
     () => courses.flatMap(c => c.items.map(i => ({ ...i, courseId: c.id, courseName: c.name }))),
@@ -227,6 +236,7 @@ export default function App() {
   );
 
   const selectedItems = selectedCourse?.items || [];
+  const demoSession = isDemoSession(session);
 
   const courseOptions = useMemo(() => courses.map(course => ({ id: course.id, name: course.name })), [courses]);
 
@@ -355,9 +365,11 @@ export default function App() {
   function handleReset() {
     setConfirmation({
       kind: "reset",
-      title: "Clear your workspace?",
-      description: "This permanently removes every course and task in your account. Other TermPilot accounts are not affected.",
-      confirmLabel: "Clear my workspace",
+      title: demoSession ? "Restore the live demo?" : "Clear your workspace?",
+      description: demoSession
+        ? "Your demo changes will be removed and the original showcase courses will be restored. Other visitors are not affected."
+        : "This permanently removes every course and task in your account. Other TermPilot accounts are not affected.",
+      confirmLabel: demoSession ? "Restore demo" : "Clear my workspace",
     });
   }
 
@@ -388,11 +400,18 @@ export default function App() {
           if (isCurrentUserRequest(requestScope)) toast("Course deleted. Reload the page to fully sync the dashboard.", "info");
         }
       } else if (pendingConfirmation.kind === "reset") {
-        await deleteAccountData();
-        if (!isCurrentUserRequest(requestScope)) return;
-        setCourses([]);
-        setSelectedCourseId(null);
-        toast("Your workspace is clear", "info");
+        if (demoSession) {
+          const demo = await resetDemoWorkspace();
+          if (!isCurrentUserRequest(requestScope)) return;
+          syncCourses(demo.courses);
+          toast("The live demo has been restored", "success");
+        } else {
+          await deleteAccountData();
+          if (!isCurrentUserRequest(requestScope)) return;
+          setCourses([]);
+          setSelectedCourseId(null);
+          toast("Your workspace is clear", "info");
+        }
       }
     } catch (e) {
       if (isCurrentUserRequest(requestScope)) toast(e.message || "The action could not be completed", "error");
@@ -419,13 +438,21 @@ export default function App() {
     if (error) throw error;
   }
 
+  async function handleStartDemo() {
+    const { error } = await getSupabaseClient().auth.signInAnonymously();
+    if (error) throw new Error(demoAuthErrorMessage(error));
+  }
+
   async function handleSignOut() {
+    const wasDemo = demoSession;
     setSigningOut(true);
     try {
-      const { error } = await getSupabaseClient().auth.signOut();
+      const { error } = await getSupabaseClient().auth.signOut({ scope: "local" });
       if (error) throw error;
       applySession(null);
-      setAuthNotice("You’re signed out. Use a magic link whenever you’re ready to return.");
+      setAuthNotice(wasDemo
+        ? "Demo closed. Launch a fresh demo anytime, or sign in to keep your own workspace."
+        : "You’re signed out. Use a magic link whenever you’re ready to return.");
     } catch (error) {
       toast(error.message || "Could not sign out", "error");
     } finally {
@@ -449,6 +476,7 @@ export default function App() {
         dark={dark}
         onToggleDark={() => setDark(value => !value)}
         onRequestLink={handleRequestMagicLink}
+        onStartDemo={handleStartDemo}
         notice={authNotice}
         configurationError={configurationError}
       />
@@ -478,18 +506,26 @@ export default function App() {
             {dark ? <SunIcon /> : <MoonIcon />}
           </button>
           <a className="header-link" href="https://github.com/Lolu07/termpilot" target="_blank" rel="noreferrer">View source <ArrowUpRightIcon size={14} /></a>
-          <div className="account-chip" title={session.user.email || "Signed-in account"}>
-            <span className="account-avatar" aria-hidden="true">{(session.user.email || "T").charAt(0).toUpperCase()}</span>
+          <div className={`account-chip${demoSession ? " demo" : ""}`} title={demoSession ? "Temporary live demo" : session.user.email || "Signed-in account"}>
+            <span className="account-avatar" aria-hidden="true">{demoSession ? "D" : (session.user.email || "T").charAt(0).toUpperCase()}</span>
             <span className="account-copy">
-              <strong>{session.user.email?.split("@")[0] || "Account"}</strong>
-              <small>Private workspace</small>
+              <strong>{demoSession ? "Live demo" : session.user.email?.split("@")[0] || "Account"}</strong>
+              <small>{demoSession ? "Temporary workspace" : "Private workspace"}</small>
             </span>
             <button className="account-signout" type="button" onClick={handleSignOut} disabled={signingOut}>
-              {signingOut ? "Signing out…" : "Sign out"}
+              {signingOut ? "Exiting…" : demoSession ? "Exit demo" : "Sign out"}
             </button>
           </div>
         </div>
       </div>
+
+      {demoSession && (
+        <DemoBanner
+          onReset={handleReset}
+          onExit={handleSignOut}
+          resetting={confirming || signingOut}
+        />
+      )}
 
       <main className="container">
         {workspaceLoading ? (
@@ -538,7 +574,9 @@ export default function App() {
                 <h3>{selectedCourse.name} — Tasks ({selectedItems.length})</h3>
                 {selectedCourse.parse_info && (
                   <span className="pill accent">
-                    {selectedCourse.parse_info.engine === "groq" ? "AI parsed" : "Fallback parsed"}
+                    {selectedCourse.parse_info.demo_seed
+                      ? "Demo sample"
+                      : selectedCourse.parse_info.engine === "groq" ? "AI parsed" : "Fallback parsed"}
                   </span>
                 )}
               </div>
@@ -602,7 +640,11 @@ export default function App() {
 
       <div className="footer">
         <span><strong>TermPilot</strong> — built to make every deadline visible.</span>
-        {courses.length > 0 && <button type="button" onClick={handleReset}>Clear my workspace</button>}
+        {courses.length > 0 && (
+          <button type="button" onClick={handleReset}>
+            {demoSession ? "Reset demo data" : "Clear my workspace"}
+          </button>
+        )}
       </div>
 
       <ToastContainer toasts={toasts} />

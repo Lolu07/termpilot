@@ -92,6 +92,16 @@ export async function getCourses() {
   return readResponse(r, "Failed to load courses");
 }
 
+export async function bootstrapDemoWorkspace() {
+  const r = await authorizedFetch("/demo/bootstrap", { method: "POST" });
+  return readResponse(r, "Failed to prepare the live demo");
+}
+
+export async function resetDemoWorkspace() {
+  const r = await authorizedFetch("/demo/reset", { method: "POST" });
+  return readResponse(r, "Failed to reset the live demo");
+}
+
 export async function previewSyllabusText(courseName, text) {
   const r = await authorizedFetch("/parse/text", {
     method: "POST",

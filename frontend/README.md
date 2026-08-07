@@ -1,6 +1,6 @@
 # TermPilot frontend
 
-React and Vite interface for Supabase magic-link authentication, private course workspaces, syllabus upload, editable review-before-save, due-date prioritization, and workload visualization.
+React and Vite interface for Supabase magic-link authentication, isolated one-click demo sessions, private course workspaces, syllabus upload, editable review-before-save, due-date prioritization, and workload visualization.
 
 ```bash
 cp .env.example .env

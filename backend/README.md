@@ -1,6 +1,6 @@
 # TermPilot backend
 
-Express API for authenticated PDF extraction, Groq-based syllabus parsing, deterministic fallback parsing, editable import previews, due-date-first prioritization, and per-user Supabase Postgres storage.
+Express API for authenticated PDF extraction, Groq-based syllabus parsing, deterministic fallback parsing, editable import previews, due-date-first prioritization, isolated anonymous demo workspaces, and per-user Supabase Postgres storage.
 
 ```bash
 cp .env.example .env

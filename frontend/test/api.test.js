@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { configureApiAuth, getCourses, readResponse } from "../src/api.js";
+import {
+  bootstrapDemoWorkspace,
+  configureApiAuth,
+  getCourses,
+  readResponse,
+  resetDemoWorkspace,
+} from "../src/api.js";
 
 test("readResponse surfaces actionable backend errors", async () => {
   const response = new Response(JSON.stringify({
@@ -55,6 +61,46 @@ test("API requests fail closed when there is no active session", async () => {
   assert.equal(error.status, 401);
   assert.equal(error.code, "AUTH_REQUIRED");
   configureApiAuth();
+});
+
+test("demo lifecycle requests use the active bearer token and protected routes", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  configureApiAuth({
+    getAccessToken: async () => "demo-token",
+    baseUrl: "https://api.example.test/api",
+  });
+  globalThis.fetch = async (url, options) => {
+    requests.push({
+      url,
+      method: options.method,
+      authorization: new Headers(options.headers).get("authorization"),
+    });
+    return new Response(JSON.stringify({ courses: [], seeded: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  try {
+    await bootstrapDemoWorkspace();
+    await resetDemoWorkspace();
+    assert.deepEqual(requests, [
+      {
+        url: "https://api.example.test/api/demo/bootstrap",
+        method: "POST",
+        authorization: "Bearer demo-token",
+      },
+      {
+        url: "https://api.example.test/api/demo/reset",
+        method: "POST",
+        authorization: "Bearer demo-token",
+      },
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    configureApiAuth();
+  }
 });
 
 test("API requests fail clearly instead of falling back to production", async () => {

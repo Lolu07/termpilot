@@ -50,13 +50,14 @@ Additional redirect URL: http://localhost:5173/**
 ```
 
 Add the exact Vercel preview pattern only if preview deployments need Auth.
-The first release uses email magic links. Email sign-in can create a user on the
-first successful link. Optional future providers include:
+Email sign-in can create a user on the first successful link. The interactive
+product demo also requires **Authentication → Sign In / Providers → Allow
+anonymous sign-ins** to be enabled. Anonymous visitors still use the
+`authenticated` Postgres role, and the existing owner-scoped RLS policies give
+each visitor an isolated temporary workspace.
 
-- Google OAuth is lower-friction for recruiters but requires a Google OAuth
-  client ID and secret.
-- A public, static read-only sample workspace can demonstrate the product
-  without giving unauthenticated visitors database or Groq access.
+Google OAuth can complement the existing magic-link and anonymous demo paths,
+but it requires a Google OAuth client ID and secret.
 
 ## 2. Apply the migration
 
@@ -173,15 +174,18 @@ scripts, and never commit it.
 
 1. React restores the Supabase browser session and listens for Auth changes.
 2. Email magic-link sign-in creates or restores a private workspace.
-3. Every API request carries `Authorization: Bearer <access token>`.
-4. Express verifies the token with `supabase.auth.getClaims(token)` and creates
+3. One-click demo entry creates a unique Supabase anonymous session and seeds
+   two dynamically dated showcase courses through the same protected API.
+4. Every API request carries `Authorization: Bearer <access token>`.
+5. Express verifies the token with `supabase.auth.getClaims(token)` and creates
    a request-scoped client using `accessToken: async () => token`.
-5. `/api/health` remains public; every parsing and data route requires Auth.
-6. Course and item mutations use UUIDs rather than course names.
-7. Reviewed confirmation uses the atomic `import_reviewed_course(...)` RPC.
-8. `DELETE /api/account/data` deletes only the verified user's courses.
-9. Parse metadata is reduced to an explicit allowlist before persistence.
-10. `priority_score` is calculated when items are serialized, so deadlines
+6. `/api/health` remains public; every parsing and data route requires Auth.
+7. Demo bootstrap/reset also require the verified boolean `is_anonymous` claim.
+8. Course and item mutations use UUIDs rather than course names.
+9. Reviewed confirmation uses the atomic `import_reviewed_course(...)` RPC.
+10. `DELETE /api/account/data` deletes only the verified user's courses.
+11. Parse metadata is reduced to an explicit allowlist before persistence.
+12. `priority_score` is calculated when items are serialized, so deadlines
     automatically become more urgent without database updates.
 
 ## 7. Existing JSON data
@@ -190,10 +194,8 @@ The previous JSON store was shared and has no reliable owner IDs. It is no
 longer used by the runtime. The safest production migration is to start
 Supabase accounts empty.
 
-If the sample data must be retained, first create a dedicated demo Auth user,
-then run a one-time local admin script that assigns every imported course and
-item to that user's UUID. Do not attribute shared records to a real user, and do
-not deploy the admin key or migration script as part of the web application.
+The live product demo does not reuse this old JSON data or a shared demo user.
+Every visitor receives a separate anonymous Auth user and fresh showcase data.
 
 ## 8. Production cutover checklist
 
@@ -201,11 +203,12 @@ not deploy the admin key or migration script as part of the web application.
 2. Apply and verify the migration in development.
 3. Test the RPC and RLS with two users.
 4. Configure Auth providers, Site URL, and redirects.
-5. Add every Render and Vercel environment variable listed above.
-6. Deploy the authenticated backend before the Auth-enabled frontend when
+5. Enable anonymous sign-ins and test that two browser profiles receive different demo workspaces.
+6. Add every Render and Vercel environment variable listed above.
+7. Deploy the authenticated backend before the Auth-enabled frontend when
    coordinating the first production cutover.
-7. Deploy the Auth-enabled frontend.
-8. Confirm that raw document text is absent from database rows and logs.
-9. Confirm no secret key appears in the Vite production bundle.
-10. Sign out, sign in again, and verify the same account retains its data while
+8. Deploy the Auth-enabled frontend.
+9. Confirm that raw document text is absent from database rows and logs.
+10. Confirm no secret key appears in the Vite production bundle.
+11. Sign out, sign in again, and verify the same account retains its data while
     a second account receives an empty, isolated workspace.

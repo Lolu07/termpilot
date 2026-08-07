@@ -220,6 +220,7 @@ export function sanitizeParseInfo(parseInfo, reviewedItemCount) {
   if (typeof source.warning === "string" && source.warning.trim()) {
     result.warning = source.warning.trim().slice(0, 500);
   }
+  if (source.demo_seed === true) result.demo_seed = true;
 
   return result;
 }

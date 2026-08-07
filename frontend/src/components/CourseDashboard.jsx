@@ -40,7 +40,9 @@ export default function CourseDashboard({ courses, selectedCourseId, onSelectCou
                   <span className="pill">{c.done}/{c.total}</span>
                   {c.parse_info && (
                     <span className="pill accent" title={`${c.parse_info.item_count} items extracted`}>
-                      {c.parse_info.engine === "groq" ? "AI" : "Fallback"}
+                      {c.parse_info.demo_seed
+                        ? "Demo"
+                        : c.parse_info.engine === "groq" ? "AI" : "Fallback"}
                     </span>
                   )}
                 </div>
