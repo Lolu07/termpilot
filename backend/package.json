@@ -3,12 +3,16 @@
   "version": "1.0.0",
   "type": "module",
   "main": "src/server.js",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev": "node --env-file=.env src/server.js",
     "start": "node src/server.js",
     "test": "node --test"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.1",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "groq-sdk": "^1.2.1",

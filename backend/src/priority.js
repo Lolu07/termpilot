@@ -1,19 +1,30 @@
 /**
- * Score uses:
- *  - days until due (closer => higher)
- *  - weight (higher => higher)
- *  - effort (bigger => higher)
+ * Priority is intentionally due-date first. Each urgency window has enough
+ * separation that weight and effort can only order tasks inside that window;
+ * a distant exam can never displace an assignment due this week.
  */
-export function priorityScore(item) {
-  const daysLeft = daysUntilDue(item.due_date);
+export function priorityScore(item, now = new Date()) {
+  const daysLeft = daysUntilDue(item.due_date, now);
+  const weight = clampNumber(item.weight, 0, 100);
+  const effort = clampNumber(item.estimated_effort_hours, 0, 20);
+  const impactTieBreak = weight * 0.3 + effort;
 
-  const timeUrgency = daysLeft < 0
-    ? 180 + Math.min(Math.abs(daysLeft), 14) * 5
-    : 150 / (daysLeft + 1);
-  const weightBoost = (item.weight || 0) * 2; // 0-200
-  const effortBoost = (item.estimated_effort_hours || 0) * 5; // 0-50
+  let urgency;
+  if (daysLeft < 0) urgency = 700 + Math.min(Math.abs(daysLeft), 30);
+  else if (daysLeft === 0) urgency = 650;
+  else if (daysLeft <= 3) urgency = 550 + (3 - daysLeft) * 10;
+  else if (daysLeft <= 7) urgency = 450 + (7 - daysLeft) * 5;
+  else if (daysLeft <= 14) urgency = 350 + (14 - daysLeft) * 3;
+  else if (daysLeft <= 30) urgency = 250 + (30 - daysLeft);
+  else urgency = 100 + Math.max(0, 90 - Math.min(daysLeft, 90)) * 0.5;
 
-  return Math.round(timeUrgency + weightBoost + effortBoost);
+  return Math.round(urgency + impactTieBreak);
+}
+
+function clampNumber(value, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return min;
+  return Math.min(max, Math.max(min, number));
 }
 
 export function daysUntilDue(dateKey, now = new Date()) {
@@ -25,7 +36,9 @@ export function daysUntilDue(dateKey, now = new Date()) {
 }
 
 export function priorityLabel(score) {
-  if (score >= 220) return "Critical";
-  if (score >= 140) return "Important";
-  return "Low";
+  if (score >= 650) return "Critical";
+  if (score >= 550) return "High";
+  if (score >= 450) return "Soon";
+  if (score >= 350) return "Upcoming";
+  return "Planned";
 }

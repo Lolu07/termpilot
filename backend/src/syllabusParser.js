@@ -55,6 +55,7 @@ Reply with ONLY one JSON object using this exact shape — no markdown fences or
 
 Skip readings, lectures, office hours, class sessions, and non-graded items.
 Do not include words such as "due" or the weight in the title.
+Treat grading-category percentages as category metadata, not individual task weights. For example, "Homework (6 assignments) — 30%" means the homework category is 30%; it does NOT mean every homework is worth 30%. Set an item's weight to 0 unless a percentage is explicitly attached to that named assignment, quiz, exam, project, or other individual item. A category containing exactly one named item, such as a single Final Exam, may use that category percentage.
 If no graded items are found, return {"items":[]}.
 
 BEGIN_SYLLABUS
@@ -251,6 +252,12 @@ function extractWeight(line) {
   return clamp(Number(matches.at(-1)[1]), 0, 100);
 }
 
+function isCategorySummary(line) {
+  const percentageCount = [...String(line).matchAll(/\d+(?:\.\d+)?\s*%/g)].length;
+  return percentageCount > 1
+    || /\b(?:grading|grade\s+breakdown|assessment\s+weights?|course\s+evaluation)\b/i.test(line);
+}
+
 function candidateLines(text) {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const candidates = [...lines];
@@ -260,7 +267,9 @@ function candidateLines(text) {
     const hasKeyword = GRADED_ITEM_PATTERN.test(current);
     const currentHasDate = findDateText(current);
     const nextHasDate = findDateText(next);
-    if (hasKeyword && !currentHasDate && nextHasDate) candidates.push(`${current} ${next}`);
+    if (hasKeyword && !currentHasDate && nextHasDate && !isCategorySummary(current)) {
+      candidates.push(`${current} ${next}`);
+    }
   }
   return candidates;
 }
@@ -276,6 +285,7 @@ export function parseWithFallback(text, courseName) {
 
   for (const line of candidateLines(text)) {
     if (!GRADED_ITEM_PATTERN.test(line)) continue;
+    if (isCategorySummary(line)) continue;
     const dateText = findDateText(line);
     if (!dateText) continue;
     const due = tryParseDate(dateText);

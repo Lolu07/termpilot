@@ -63,3 +63,15 @@ test("fallback does not treat the word syllabus as a lab assignment", () => {
   const items = parseWithFallback("Syllabus updated September 8, 2026", "TEST 101");
   assert.equal(items.length, 0);
 });
+
+test("fallback does not copy category percentages onto individual tasks", () => {
+  const text = [
+    "Grading: Homework (6 assignments) — 30%; Quizzes — 10%; Exams — 35%",
+    "Homework 1 due 2026-08-11",
+    "Homework 2 due 2026-08-25",
+    "Exam 1 due 2026-09-08",
+  ].join("\n");
+
+  const items = parseWithFallback(text, "CS 201");
+  assert.deepEqual(items.map(item => item.weight), [0, 0, 0]);
+});
