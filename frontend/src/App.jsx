@@ -1,5 +1,6 @@
-import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  configureApiAuth,
   getCourses,
   importReviewedCourse,
   markComplete,
@@ -8,7 +9,8 @@ import {
   previewSyllabusPDF,
   previewSyllabusText,
   createItem as apiCreateItem,
-  resetDB,
+  deleteAccountData,
+  isApiConfigured,
 } from "./api.js";
 import CourseDashboard from "./components/CourseDashboard.jsx";
 import UploadForm from "./components/UploadForm.jsx";
@@ -20,6 +22,9 @@ import EmptyWorkspace from "./components/EmptyWorkspace.jsx";
 import { formatFriendlyDate } from "./dateUtils.js";
 import { ArrowUpRightIcon, MoonIcon, SunIcon, TrashIcon } from "./components/Icons.jsx";
 import ConfirmDialog from "./components/ConfirmDialog.jsx";
+import AuthScreen, { AuthLoadingScreen } from "./components/AuthScreen.jsx";
+import { getMagicLinkRedirectUrl, getSupabaseClient, isSupabaseConfigured } from "./auth/supabase.js";
+import { createUserScope } from "./auth/userScope.js";
 
 const WorkloadChart = lazy(() => import("./components/WorkloadChart.jsx"));
 
@@ -32,7 +37,8 @@ function useToasts() {
     setToasts(prev => [...prev, { id, msg, type }]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
   }, []);
-  return { toasts, toast: add };
+  const clear = useCallback(() => setToasts([]), []);
+  return { toasts, toast: add, clearToasts: clear };
 }
 
 function ToastContainer({ toasts }) {
@@ -52,14 +58,21 @@ function ToastContainer({ toasts }) {
 
 // ── Priority label helper ─────────────────────────────────────────────────────
 function priorityLabel(score) {
-  if (score >= 220) return ["Critical", "red"];
-  if (score >= 140) return ["Important", "orange"];
-  return ["Low", "green"];
+  if (score >= 650) return ["Critical", "red"];
+  if (score >= 550) return ["High", "orange"];
+  if (score >= 450) return ["Soon", "orange"];
+  if (score >= 350) return ["Upcoming", "accent"];
+  return ["Planned", "green"];
 }
 
 export default function App() {
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authNotice, setAuthNotice] = useState("");
+  const [signingOut, setSigningOut] = useState(false);
   const [courses, setCourses] = useState([]);
-  const [selectedCourse, setSelectedCourse] = useState(null);
+  const [selectedCourseId, setSelectedCourseId] = useState(null);
+  const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [reviewDraft, setReviewDraft] = useState(null);
   const [reviewConflictCourse, setReviewConflictCourse] = useState(null);
@@ -69,7 +82,9 @@ export default function App() {
   const [dark, setDark] = useState(() => {
     try { return localStorage.getItem("tp-dark") === "1"; } catch { return false; }
   });
-  const { toasts, toast } = useToasts();
+  const { toasts, toast, clearToasts } = useToasts();
+  const userScopeRef = useRef(null);
+  if (!userScopeRef.current) userScopeRef.current = createUserScope();
 
   // Sync dark mode class to <body>
   useEffect(() => {
@@ -77,82 +92,210 @@ export default function App() {
     try { localStorage.setItem("tp-dark", dark ? "1" : "0"); } catch {}
   }, [dark]);
 
-  async function refresh() {
-    const data = await getCourses();
-    setCourses(data);
-    return data;
-  }
+  const clearWorkspaceState = useCallback(() => {
+    setCourses([]);
+    setSelectedCourseId(null);
+    setLoading(false);
+    setReviewDraft(null);
+    setReviewConflictCourse(null);
+    setSavingReview(false);
+    setConfirmation(null);
+    setConfirming(false);
+    clearToasts();
+  }, [clearToasts]);
 
-  useEffect(() => {
-    getCourses()
-      .then(data => {
-        setCourses(data);
-        if (data.length) setSelectedCourse(data[0].name);
-      })
-      .catch(error => toast(error.message || "Failed to load courses", "error"));
+  const applySession = useCallback(nextSession => {
+    const nextUserId = nextSession?.user?.id || null;
+    const transition = userScopeRef.current.transition(nextUserId);
+    if (transition.changed) {
+      clearWorkspaceState();
+      setWorkspaceLoading(Boolean(nextUserId));
+    }
+    setSession(nextSession);
+  }, [clearWorkspaceState]);
+
+  const syncCourses = useCallback(data => {
+    const nextCourses = Array.isArray(data) ? data : [];
+    setCourses(nextCourses);
+    setSelectedCourseId(current => (
+      nextCourses.some(course => course.id === current) ? current : nextCourses[0]?.id || null
+    ));
   }, []);
 
+  const refresh = useCallback(async () => {
+    const requestScope = userScopeRef.current.capture();
+    if (!requestScope.userId) return null;
+    const data = await getCourses();
+    if (!userScopeRef.current.isCurrent(requestScope)) return null;
+    syncCourses(data);
+    return data;
+  }, [syncCourses]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setAuthReady(true);
+      return undefined;
+    }
+
+    const supabase = getSupabaseClient();
+    let active = true;
+    let handlingUnauthorized = false;
+
+    configureApiAuth({
+      getAccessToken: async () => {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        return data.session?.access_token || null;
+      },
+      onUnauthorized: async () => {
+        if (handlingUnauthorized) return;
+        handlingUnauthorized = true;
+        if (active) setAuthNotice("Your session expired. Request a new sign-in link to continue.");
+        try {
+          await supabase.auth.signOut({ scope: "local" });
+        } finally {
+          if (active) {
+            applySession(null);
+          }
+          handlingUnauthorized = false;
+        }
+      },
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!active) return;
+      applySession(nextSession);
+      setAuthReady(true);
+      if (nextSession) setAuthNotice("");
+    });
+
+    supabase.auth.getSession()
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          setAuthNotice("We could not restore your session. Request a new sign-in link to continue.");
+          applySession(null);
+        } else {
+          applySession(data.session);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setAuthNotice("We could not restore your session. Request a new sign-in link to continue.");
+          applySession(null);
+        }
+      })
+      .finally(() => {
+        if (active) setAuthReady(true);
+      });
+
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+      configureApiAuth();
+    };
+  }, [applySession]);
+
+  useEffect(() => {
+    if (!authReady || !session?.user?.id) return undefined;
+    let active = true;
+    const requestScope = userScopeRef.current.capture();
+    setWorkspaceLoading(true);
+    getCourses()
+      .then(data => {
+        if (active && userScopeRef.current.isCurrent(requestScope)) syncCourses(data);
+      })
+      .catch(error => {
+        if (active && userScopeRef.current.isCurrent(requestScope) && error.status !== 401) {
+          toast(error.message || "Failed to load courses", "error");
+        }
+      })
+      .finally(() => {
+        if (active && userScopeRef.current.isCurrent(requestScope)) setWorkspaceLoading(false);
+      });
+    return () => { active = false; };
+  }, [authReady, session?.user?.id, syncCourses, toast]);
+
   const allItems = useMemo(
-    () => courses.flatMap(c => c.items.map(i => ({ ...i, courseName: c.name }))),
+    () => courses.flatMap(c => c.items.map(i => ({ ...i, courseId: c.id, courseName: c.name }))),
     [courses]
   );
 
-  const selectedItems = useMemo(() => {
-    const c = courses.find(x => x.name === selectedCourse);
-    return c ? c.items : [];
-  }, [courses, selectedCourse]);
+  const selectedCourse = useMemo(
+    () => courses.find(course => course.id === selectedCourseId) || null,
+    [courses, selectedCourseId],
+  );
 
-  const courseNames = useMemo(() => courses.map(c => c.name), [courses]);
+  const selectedItems = selectedCourse?.items || [];
+
+  const courseOptions = useMemo(() => courses.map(course => ({ id: course.id, name: course.name })), [courses]);
+
+  function captureUserRequest() {
+    return userScopeRef.current.capture();
+  }
+
+  function isCurrentUserRequest(requestScope) {
+    return userScopeRef.current.isCurrent(requestScope);
+  }
 
   async function handleUploadText(courseName, text) {
+    const requestScope = captureUserRequest();
     setLoading(true);
     try {
       const result = await previewSyllabusText(courseName, text);
+      if (!isCurrentUserRequest(requestScope)) return;
       setReviewConflictCourse(null);
       setReviewDraft(result);
       const engine = result.parse_info?.engine === "groq" ? "AI" : "fallback parser";
       toast(`Found ${result.items.length} items with ${engine}. Review them before importing.`, "info");
     } catch (e) {
-      toast(e.message || "Failed to parse syllabus", "error");
+      if (isCurrentUserRequest(requestScope)) toast(e.message || "Failed to parse syllabus", "error");
     } finally {
-      setLoading(false);
+      if (isCurrentUserRequest(requestScope)) setLoading(false);
     }
   }
 
   async function handleUploadPDF(courseName, file) {
+    const requestScope = captureUserRequest();
     setLoading(true);
     try {
       const result = await previewSyllabusPDF(courseName, file);
+      if (!isCurrentUserRequest(requestScope)) return;
       setReviewConflictCourse(null);
       setReviewDraft(result);
       const engine = result.parse_info?.engine === "groq" ? "AI" : "fallback parser";
       const pages = result.parse_info?.pages ? ` across ${result.parse_info.pages} page${result.parse_info.pages === 1 ? "" : "s"}` : "";
       toast(`Found ${result.items.length} items${pages} with ${engine}. Review them before importing.`, "info");
     } catch (e) {
-      toast(e.message || "Failed to parse PDF", "error");
+      if (isCurrentUserRequest(requestScope)) toast(e.message || "Failed to parse PDF", "error");
     } finally {
-      setLoading(false);
+      if (isCurrentUserRequest(requestScope)) setLoading(false);
     }
   }
 
   async function handleConfirmImport({ courseName, items, parseInfo, replace }) {
+    const requestScope = captureUserRequest();
     setSavingReview(true);
     try {
       const course = await importReviewedCourse(courseName, items, parseInfo, replace);
+      if (!isCurrentUserRequest(requestScope)) return;
       setCourses(current => {
         const next = current.filter(existing => existing.name.toLowerCase() !== course.name.toLowerCase());
         return [...next, course];
       });
-      setSelectedCourse(course.name);
+      setSelectedCourseId(course.id);
       setReviewDraft(null);
       setReviewConflictCourse(null);
       toast(`Added ${course.items.length} reviewed tasks to ${course.name}`, "success");
       try {
         await refresh();
       } catch {
-        toast("The course was saved, but the dashboard could not refresh. Reload the page to sync it.", "info");
+        if (isCurrentUserRequest(requestScope)) {
+          toast("The course was saved, but the dashboard could not refresh. Reload the page to sync it.", "info");
+        }
       }
     } catch (error) {
+      if (!isCurrentUserRequest(requestScope)) return;
       if (error.code === "COURSE_EXISTS") {
         setReviewConflictCourse(courseName);
         toast("That course now exists. Review the replacement warning, then confirm again.", "info");
@@ -160,27 +303,31 @@ export default function App() {
       }
       toast(error.message || "Failed to import reviewed tasks", "error");
     } finally {
-      setSavingReview(false);
+      if (isCurrentUserRequest(requestScope)) setSavingReview(false);
     }
   }
 
   async function handleAddTask(fields) {
+    const requestScope = captureUserRequest();
     try {
       await apiCreateItem(fields);
+      if (!isCurrentUserRequest(requestScope)) return;
       await refresh();
-      toast(`Added "${fields.title}"`, "success");
+      if (isCurrentUserRequest(requestScope)) toast(`Added "${fields.title}"`, "success");
     } catch (e) {
-      toast(e.message || "Failed to add task", "error");
+      if (isCurrentUserRequest(requestScope)) toast(e.message || "Failed to add task", "error");
     }
   }
 
   async function handleComplete(id) {
+    const requestScope = captureUserRequest();
     try {
       await markComplete(id);
+      if (!isCurrentUserRequest(requestScope)) return;
       await refresh();
-      toast("Marked as done!", "success");
+      if (isCurrentUserRequest(requestScope)) toast("Marked as done!", "success");
     } catch (e) {
-      toast(e.message || "Failed to update task", "error");
+      if (isCurrentUserRequest(requestScope)) toast(e.message || "Failed to update task", "error");
     }
   }
 
@@ -194,9 +341,10 @@ export default function App() {
     });
   }
 
-  function handleDeleteCourse(name) {
+  function handleDeleteCourse(id, name) {
     setConfirmation({
       kind: "delete-course",
+      id,
       name,
       title: `Delete ${name}?`,
       description: "Every task and completion record in this course will be permanently removed.",
@@ -207,47 +355,105 @@ export default function App() {
   function handleReset() {
     setConfirmation({
       kind: "reset",
-      title: "Reset the demo workspace?",
-      description: "This permanently removes every course and task from the current demo data store.",
-      confirmLabel: "Reset workspace",
+      title: "Clear your workspace?",
+      description: "This permanently removes every course and task in your account. Other TermPilot accounts are not affected.",
+      confirmLabel: "Clear my workspace",
     });
   }
 
   async function handleConfirmAction() {
     if (!confirmation) return;
+    const requestScope = captureUserRequest();
+    const pendingConfirmation = confirmation;
     setConfirming(true);
     try {
-      if (confirmation.kind === "delete-item") {
-        await apiDeleteItem(confirmation.id);
+      if (pendingConfirmation.kind === "delete-item") {
+        await apiDeleteItem(pendingConfirmation.id);
+        if (!isCurrentUserRequest(requestScope)) return;
         setCourses(current => current.map(course => ({
           ...course,
-          items: course.items.filter(item => item.id !== confirmation.id),
+          items: course.items.filter(item => item.id !== pendingConfirmation.id),
         })));
         toast("Task deleted", "info");
-        try { await refresh(); } catch { toast("Task deleted. Reload the page to fully sync the dashboard.", "info"); }
-      } else if (confirmation.kind === "delete-course") {
-        await apiDeleteCourse(confirmation.name);
-        setCourses(current => current.filter(course => course.name !== confirmation.name));
-        if (selectedCourse === confirmation.name) setSelectedCourse(null);
-        toast(`Deleted course "${confirmation.name}"`, "info");
-        try { await refresh(); } catch { toast("Course deleted. Reload the page to fully sync the dashboard.", "info"); }
-      } else if (confirmation.kind === "reset") {
-        await resetDB();
+        try { await refresh(); } catch {
+          if (isCurrentUserRequest(requestScope)) toast("Task deleted. Reload the page to fully sync the dashboard.", "info");
+        }
+      } else if (pendingConfirmation.kind === "delete-course") {
+        await apiDeleteCourse(pendingConfirmation.id);
+        if (!isCurrentUserRequest(requestScope)) return;
+        setCourses(current => current.filter(course => course.id !== pendingConfirmation.id));
+        if (selectedCourseId === pendingConfirmation.id) setSelectedCourseId(null);
+        toast(`Deleted course "${pendingConfirmation.name}"`, "info");
+        try { await refresh(); } catch {
+          if (isCurrentUserRequest(requestScope)) toast("Course deleted. Reload the page to fully sync the dashboard.", "info");
+        }
+      } else if (pendingConfirmation.kind === "reset") {
+        await deleteAccountData();
+        if (!isCurrentUserRequest(requestScope)) return;
         setCourses([]);
-        setSelectedCourse(null);
-        toast("Demo workspace reset", "info");
+        setSelectedCourseId(null);
+        toast("Your workspace is clear", "info");
       }
     } catch (e) {
-      toast(e.message || "The action could not be completed", "error");
+      if (isCurrentUserRequest(requestScope)) toast(e.message || "The action could not be completed", "error");
     } finally {
-      setConfirming(false);
-      setConfirmation(null);
+      if (isCurrentUserRequest(requestScope)) {
+        setConfirming(false);
+        setConfirmation(null);
+      }
     }
   }
 
   const completedCount = allItems.filter(i => i.completed).length;
   const totalCount = allItems.length;
-  const pendingCount = totalCount - completedCount;
+
+  async function handleRequestMagicLink(email) {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: getMagicLinkRedirectUrl(),
+        shouldCreateUser: true,
+      },
+    });
+    if (error) throw error;
+  }
+
+  async function handleSignOut() {
+    setSigningOut(true);
+    try {
+      const { error } = await getSupabaseClient().auth.signOut();
+      if (error) throw error;
+      applySession(null);
+      setAuthNotice("You’re signed out. Use a magic link whenever you’re ready to return.");
+    } catch (error) {
+      toast(error.message || "Could not sign out", "error");
+    } finally {
+      setSigningOut(false);
+    }
+  }
+
+  if (!authReady) {
+    return <AuthLoadingScreen dark={dark} onToggleDark={() => setDark(value => !value)} />;
+  }
+
+  const configurationError = !isSupabaseConfigured
+    ? "Authentication is not configured for this deployment yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY, then redeploy."
+    : !isApiConfigured
+      ? "The backend API is not configured for this deployment yet. Add VITE_API_URL, then redeploy."
+      : "";
+
+  if (!session || configurationError) {
+    return (
+      <AuthScreen
+        dark={dark}
+        onToggleDark={() => setDark(value => !value)}
+        onRequestLink={handleRequestMagicLink}
+        notice={authNotice}
+        configurationError={configurationError}
+      />
+    );
+  }
 
   return (
     <div className="app-frame">
@@ -272,10 +478,27 @@ export default function App() {
             {dark ? <SunIcon /> : <MoonIcon />}
           </button>
           <a className="header-link" href="https://github.com/Lolu07/termpilot" target="_blank" rel="noreferrer">View source <ArrowUpRightIcon size={14} /></a>
+          <div className="account-chip" title={session.user.email || "Signed-in account"}>
+            <span className="account-avatar" aria-hidden="true">{(session.user.email || "T").charAt(0).toUpperCase()}</span>
+            <span className="account-copy">
+              <strong>{session.user.email?.split("@")[0] || "Account"}</strong>
+              <small>Private workspace</small>
+            </span>
+            <button className="account-signout" type="button" onClick={handleSignOut} disabled={signingOut}>
+              {signingOut ? "Signing out…" : "Sign out"}
+            </button>
+          </div>
         </div>
       </div>
 
       <main className="container">
+        {workspaceLoading ? (
+          <div className="workspace-loading card" aria-live="polite">
+            <span className="auth-loader" aria-hidden="true" />
+            <div><strong>Loading your workspace</strong><span>Syncing courses and deadlines…</span></div>
+          </div>
+        ) : (
+        <>
         <OverviewHero items={allItems} courseCount={courses.length} />
         <div className="grid">
         {/* Left column */}
@@ -285,12 +508,12 @@ export default function App() {
             onUploadPDF={handleUploadPDF}
             onAddTask={handleAddTask}
             loading={loading}
-            courseNames={courseNames}
+            courseOptions={courseOptions}
           />
           <CourseDashboard
             courses={courses}
-            selectedCourse={selectedCourse}
-            onSelectCourse={setSelectedCourse}
+            selectedCourseId={selectedCourseId}
+            onSelectCourse={setSelectedCourseId}
             onDeleteCourse={handleDeleteCourse}
           />
         </aside>
@@ -312,10 +535,10 @@ export default function App() {
           {selectedCourse && (
             <div className="card">
               <div className="section-header">
-                <h3>{selectedCourse} — Tasks ({selectedItems.length})</h3>
-                {courses.find(course => course.name === selectedCourse)?.parse_info && (
+                <h3>{selectedCourse.name} — Tasks ({selectedItems.length})</h3>
+                {selectedCourse.parse_info && (
                   <span className="pill accent">
-                    {courses.find(course => course.name === selectedCourse).parse_info.engine === "groq" ? "AI parsed" : "Fallback parsed"}
+                    {selectedCourse.parse_info.engine === "groq" ? "AI parsed" : "Fallback parsed"}
                   </span>
                 )}
               </div>
@@ -373,11 +596,13 @@ export default function App() {
           )}
         </section>
         </div>
+        </>
+        )}
       </main>
 
       <div className="footer">
         <span><strong>TermPilot</strong> — built to make every deadline visible.</span>
-        {courses.length > 0 && <button type="button" onClick={handleReset}>Reset demo data</button>}
+        {courses.length > 0 && <button type="button" onClick={handleReset}>Clear my workspace</button>}
       </div>
 
       <ToastContainer toasts={toasts} />

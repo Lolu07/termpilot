@@ -16,9 +16,12 @@ Important deadlines are often buried in long documents and inconsistent tables. 
 - Deterministic fallback parser when the AI provider is unavailable
 - Editable review checkpoint before any extracted task is persisted
 - Conflict-safe course imports that require explicit confirmation before replacement
+- Passwordless Supabase Auth with a private workspace for every user
+- PostgreSQL persistence protected by owner-scoped Row Level Security
 - Parser provenance, page count, and extraction metadata in API responses
 - Clear errors for scanned, damaged, oversized, and unsupported PDFs
 - Weekly calendar, eight-week workload forecast, and priority-based focus list
+- Due-date-first priority windows that prevent distant exams from displacing immediate work
 - Multi-course task tracking, completion state, manual task entry, and dark mode
 - Responsive and keyboard-accessible upload interactions
 - Automated parser regression tests, including the original table-concatenation bug
@@ -44,29 +47,31 @@ The PDF renderer groups text fragments by their Y coordinate, sorts each row by 
 
 | Layer | Technology |
 | --- | --- |
-| Frontend | React, Vite, Recharts |
+| Frontend | React, Vite, Recharts, Supabase Auth |
 | Backend | Node.js, Express |
 | AI extraction | Groq (`llama-3.3-70b-versatile` by default) |
 | PDF extraction | `pdf-parse` with a custom layout renderer |
-| Current demo storage | Local JSON |
+| Persistence | Supabase Postgres with Row Level Security |
 | Hosting | Vercel frontend, Render backend |
 | Testing | Node test runner, Vite production build |
 
 ## Run locally
 
-Requirements: Node.js 20 or newer and a [Groq API key](https://console.groq.com/keys).
+Requirements: Node.js 22 or newer and a Supabase project. A [Groq API key](https://console.groq.com/keys) is optional for local fallback parsing, but required to demonstrate AI extraction.
 
 ```bash
 git clone https://github.com/Lolu07/termpilot.git
 cd termpilot
 ```
 
+Apply [the Supabase migration](supabase/migrations/20260805000100_auth_and_persistence.sql) in a development project before starting the app. Then configure `http://localhost:5173/**` as an allowed Auth redirect URL. The complete setup and production checklist is in [docs/SUPABASE_MIGRATION.md](docs/SUPABASE_MIGRATION.md).
+
 Start the backend:
 
 ```bash
 cd backend
 cp .env.example .env
-# Add your GROQ_API_KEY to .env
+# Add the Groq and Supabase values to .env
 npm ci
 npm run dev
 ```
@@ -90,6 +95,8 @@ Backend:
 | --- | --- |
 | `GROQ_API_KEY` | Required for AI parsing; fallback parsing still works without it |
 | `GROQ_MODEL` | Optional model override |
+| `SUPABASE_URL` | Supabase project URL used for Auth verification and PostgREST |
+| `SUPABASE_PUBLISHABLE_KEY` | Public project key used with each verified user's JWT |
 | `ALLOWED_ORIGINS` | Comma-separated frontend origins allowed by CORS |
 | `PORT` | Express port; defaults to `4000` |
 
@@ -98,21 +105,26 @@ Frontend:
 | Variable | Purpose |
 | --- | --- |
 | `VITE_API_URL` | Backend API base URL, such as `http://localhost:4000/api` |
+| `VITE_SUPABASE_URL` | Supabase project URL used by browser Auth |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Public browser-safe project key; authorization is enforced by RLS |
 
 ## API overview
 
 | Method | Endpoint | Description |
 | --- | --- | --- |
-| `GET` | `/api/health` | Service health and non-secret parser/storage readiness |
+| `GET` | `/api/health` | Public process health and non-secret configuration status |
 | `GET` | `/api/courses` | List courses and tasks |
 | `POST` | `/api/parse/text` | Preview tasks from pasted syllabus text without saving |
 | `POST` | `/api/parse/pdf` | Preview tasks from a PDF without saving |
 | `POST` | `/api/courses/import` | Validate and save a reviewed import |
 | `POST` | `/api/items` | Add a task manually |
 | `PATCH` | `/api/items/:id` | Update a task |
+| `PATCH` | `/api/items/:id/complete` | Mark a task complete |
 | `DELETE` | `/api/items/:id` | Delete a task |
-| `DELETE` | `/api/courses/:name` | Delete a course |
-| `POST` | `/api/reset` | Reset demo data |
+| `DELETE` | `/api/courses/:id` | Delete one owned course by UUID |
+| `DELETE` | `/api/account/data` | Delete every course belonging to the signed-in user |
+
+Every endpoint except `/api/health` requires `Authorization: Bearer <Supabase access token>`. Express verifies the token, derives the user ID from its signed claims, and performs each database request with that user's RLS context.
 
 A successful parse includes non-secret provenance:
 
@@ -136,18 +148,18 @@ cd backend && npm test
 cd ../frontend && npm test && npm run build
 ```
 
-The automated regression suite covers layout reconstruction, flattened PDF tables, scanned-document detection, date validation, reviewed-import materialization, strict replacement confirmation, weight extraction, type inference, deduplication, timezone-safe date helpers, and overdue priority behavior. Manual release QA also runs the preview/no-write/import/conflict flow end to end with a known 17-item PDF fixture.
+The automated regression suite covers authentication middleware, owner-scoped repository queries, UUID mutations, sanitized imports, API contracts, layout reconstruction, flattened PDF tables, scanned-document detection, category-weight handling, date validation, deduplication, and due-date-first priority windows. Live Row Level Security is verified separately with two real Supabase users before release.
 
 ## Privacy and current limitations
 
 - Syllabus text is sent to Groq for extraction. TermPilot does not persist the raw syllabus text, but users should avoid uploading documents containing information they do not want processed by the AI provider.
 - Image-only or scanned PDFs are detected and rejected with guidance; OCR is not yet included.
-- The public demo currently uses a shared, ephemeral JSON store. It is suitable for demonstration, not private academic data, and may reset during deployments.
+- Course and task rows are isolated by Supabase Auth ownership and PostgreSQL Row Level Security. Uploaded PDF bytes and raw syllabus text are not stored.
 - AI-extracted deadlines should always be reviewed against the original syllabus.
 
 ## Roadmap
 
-- Per-user authentication and persistent Postgres storage ([Supabase migration package](docs/SUPABASE_MIGRATION.md))
+- Google OAuth and a curated read-only recruiter demo workspace
 - OCR support for scanned syllabi
 - Calendar export (`.ics`) and planned study sessions before each deadline
 - A sanitized multi-syllabus benchmark with published extraction accuracy

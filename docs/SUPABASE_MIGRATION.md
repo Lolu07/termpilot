@@ -1,9 +1,8 @@
 # Supabase migration guide
 
-This package prepares TermPilot for per-user Supabase Auth and persistent
-Postgres storage. Applying the SQL migration alone does **not** change the
-current application: Express continues using `backend/src/data/db.json` until a
-later runtime cutover.
+TermPilot now uses Supabase Auth and Postgres for private, persistent user
+workspaces. The application will not start without Supabase runtime variables,
+and the authenticated routes require this migration to be applied first.
 
 ## What the migration creates
 
@@ -22,13 +21,10 @@ The database deliberately does not store uploaded PDFs or raw syllabus text.
 ## Design assumptions
 
 1. Supabase Auth is the identity source; `auth.uid()` is the tenant boundary.
-2. Express remains the only application API. The first runtime cutover should
-   use `@supabase/supabase-js` directly: verify each bearer token with
+2. Express remains the only application API. It uses
+   `@supabase/supabase-js` directly: each bearer token is verified with
    `supabase.auth.getClaims(token)`, then create a caller-scoped client using
    the `accessToken` option so database calls retain the user's RLS context.
-   Supabase currently recommends `@supabase/server` for header-based runtimes,
-   but it has no first-party Express adapter; reassess it when implementing the
-   cutover instead of forcing an unsupported adapter into this app.
 3. Normal runtime requests use a Supabase publishable key, not a secret or
    legacy `service_role` key.
 4. Course names are case-insensitively unique per user. A same-name import is
@@ -54,9 +50,9 @@ Additional redirect URL: http://localhost:5173/**
 ```
 
 Add the exact Vercel preview pattern only if preview deployments need Auth.
-Choose the initial login method before the runtime work begins:
+The first release uses email magic links. Email sign-in can create a user on the
+first successful link. Optional future providers include:
 
-- Email magic link is the smallest first release.
 - Google OAuth is lower-friction for recruiters but requires a Google OAuth
   client ID and secret.
 - A public, static read-only sample workspace can demonstrate the product
@@ -85,7 +81,7 @@ so a failure rolls back its changes.
 Commit future schema changes as additional timestamped migration files; do not
 edit a migration after it has been applied to production.
 
-## 3. Verify RLS before application cutover
+## 3. Verify RLS before production cutover
 
 The SQL Editor commonly runs with elevated privileges, so it is not sufficient
 for testing RLS. Create two test Auth users and exercise the Data API with each
@@ -136,19 +132,19 @@ const { data, error } = await supabase.rpc("import_reviewed_course", {
 The function ignores client-supplied IDs, ownership, completion, and priority
 fields. Database constraints reject malformed dates, unsupported item types,
 out-of-range values, and duplicate title/date pairs. Any failure rolls back the
-entire import. A duplicate course raises SQLSTATE `23505`; the API should map
-that to HTTP `409` and request explicit replacement confirmation.
+entire import. A duplicate course raises SQLSTATE `23505`; the API maps that to
+HTTP `409` and requests explicit replacement confirmation.
 
-## 5. Runtime environment variables for the later cutover
-
-These are placeholders for the future code change; the migration does not read
-them.
+## 5. Runtime environment variables
 
 Render backend:
 
 ```text
 SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+ALLOWED_ORIGINS=https://termpilot.vercel.app,http://localhost:5173
+GROQ_API_KEY=gsk_...
+GROQ_MODEL=llama-3.3-70b-versatile
 ```
 
 Vercel frontend:
@@ -156,7 +152,14 @@ Vercel frontend:
 ```text
 VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+VITE_API_URL=https://term-pilot.onrender.com/api
 ```
+
+On Render, set the repository root directory to `backend`, build command to
+`npm ci`, and start command to `npm start`. On Vercel, set the root directory to
+`frontend`, build command to `npm run build`, and output directory to `dist`.
+The Groq values are optional for fallback-only parsing; production AI parsing
+requires a valid `GROQ_API_KEY`.
 
 Publishable keys are expected to be visible in browser bundles. Their safety
 depends on correct RLS. Never put a Supabase secret key, legacy service-role
@@ -166,37 +169,26 @@ The backend does not need a secret key for normal user requests. Reserve a
 secret key for narrowly scoped, audited administration or one-time migration
 scripts, and never commit it.
 
-## 6. Application cutover map
+## 6. Implemented runtime architecture
 
-Implement the runtime migration in a separate change:
-
-1. Add Supabase Auth session handling to the React app.
-2. Attach the current access token as `Authorization: Bearer <token>` in
-   `frontend/src/api.js`.
-3. Add Express authentication middleware that extracts the bearer token,
-   verifies it with `supabase.auth.getClaims(token)`, and creates a new
-   `@supabase/supabase-js` client for that request using
-   `accessToken: async () => token`. Do not use the older global custom
-   `Authorization` header pattern, and never mutate one global client with
-   different users' sessions. Revisit `@supabase/server` if it adds a suitable
-   Express integration before this cutover ships.
-4. Replace synchronous functions in `backend/src/storage.js` with async
-   Postgres repository functions that accept the request-scoped client.
-5. Keep `/api/health` public; require Auth for parsing and every data route.
-6. Change course routes and React selection state from course names to UUIDs.
-7. Route reviewed confirmation through `import_reviewed_course(...)`.
-8. Replace the global `/api/reset` with an authenticated “delete my data” route
-   that deletes only rows where `user_id` equals the verified user.
-9. Whitelist parse metadata before calling the RPC: engine, input type, counts,
-   page count, filename, request ID, warning, and reviewed status only.
-10. Calculate `priority_score` after reading items so it remains current.
-11. Keep the old JSON API temporarily under a versioned route if a zero-downtime
-    frontend/backend rollout is required, then remove it after verification.
+1. React restores the Supabase browser session and listens for Auth changes.
+2. Email magic-link sign-in creates or restores a private workspace.
+3. Every API request carries `Authorization: Bearer <access token>`.
+4. Express verifies the token with `supabase.auth.getClaims(token)` and creates
+   a request-scoped client using `accessToken: async () => token`.
+5. `/api/health` remains public; every parsing and data route requires Auth.
+6. Course and item mutations use UUIDs rather than course names.
+7. Reviewed confirmation uses the atomic `import_reviewed_course(...)` RPC.
+8. `DELETE /api/account/data` deletes only the verified user's courses.
+9. Parse metadata is reduced to an explicit allowlist before persistence.
+10. `priority_score` is calculated when items are serialized, so deadlines
+    automatically become more urgent without database updates.
 
 ## 7. Existing JSON data
 
-The current JSON store is shared and has no reliable owner IDs. The safest
-production migration is to start Supabase accounts empty.
+The previous JSON store was shared and has no reliable owner IDs. It is no
+longer used by the runtime. The safest production migration is to start
+Supabase accounts empty.
 
 If the sample data must be retained, first create a dedicated demo Auth user,
 then run a one-time local admin script that assigns every imported course and
@@ -209,11 +201,11 @@ not deploy the admin key or migration script as part of the web application.
 2. Apply and verify the migration in development.
 3. Test the RPC and RLS with two users.
 4. Configure Auth providers, Site URL, and redirects.
-5. Add Render and Vercel environment variables.
-6. Deploy the authenticated backend routes before pointing the frontend at
-   them, or use parallel versioned APIs.
+5. Add every Render and Vercel environment variable listed above.
+6. Deploy the authenticated backend before the Auth-enabled frontend when
+   coordinating the first production cutover.
 7. Deploy the Auth-enabled frontend.
 8. Confirm that raw document text is absent from database rows and logs.
 9. Confirm no secret key appears in the Vite production bundle.
-10. Retire `db.json` and the shared reset endpoint only after the new path is
-    stable.
+10. Sign out, sign in again, and verify the same account retains its data while
+    a second account receives an empty, isolated workspace.

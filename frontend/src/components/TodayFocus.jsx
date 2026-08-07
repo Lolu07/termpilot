@@ -2,9 +2,11 @@ import React, { useMemo } from "react";
 import { daysFromToday, formatFriendlyDate } from "../dateUtils.js";
 
 function label(score) {
-  if (score >= 220) return ["Critical", "red"];
-  if (score >= 140) return ["Important", "orange"];
-  return ["Low", "green"];
+  if (score >= 650) return ["Critical", "red"];
+  if (score >= 550) return ["High", "orange"];
+  if (score >= 450) return ["Soon", "orange"];
+  if (score >= 350) return ["Upcoming", "accent"];
+  return ["Planned", "green"];
 }
 
 export default function TodayFocus({ items, onComplete }) {
@@ -17,7 +19,10 @@ export default function TodayFocus({ items, onComplete }) {
 
   return (
     <div className="card">
-      <h3>Today's Focus</h3>
+      <div className="section-header">
+        <h3>Today's Focus</h3>
+        <span className="section-kicker">Top 6 across all courses</span>
+      </div>
       <div className="items">
         {focus.map(it => {
           const [text, color] = label(it.priority_score);

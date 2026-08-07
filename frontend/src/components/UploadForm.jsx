@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { formatDateKey } from "../dateUtils.js";
 import { DocumentIcon } from "./Icons.jsx";
 
@@ -60,7 +60,7 @@ Final Exam due ${dateAfter(96)}`,
   },
 };
 
-export default function UploadForm({ onUploadText, onUploadPDF, onAddTask, loading, courseNames }) {
+export default function UploadForm({ onUploadText, onUploadPDF, onAddTask, loading, courseOptions }) {
   const [tab, setTab] = useState("text");
   const [courseName, setCourseName] = useState("");
   const [text, setText] = useState("");
@@ -75,6 +75,12 @@ export default function UploadForm({ onUploadText, onUploadPDF, onAddTask, loadi
   const [manualWeight, setManualWeight] = useState(10);
   const [manualEffort, setManualEffort] = useState(2);
   const fileRef = useRef(null);
+
+  useEffect(() => {
+    if (manualCourse && !courseOptions.some(course => course.id === manualCourse)) {
+      setManualCourse("");
+    }
+  }, [courseOptions, manualCourse]);
 
   function loadExample(key) {
     if (!key) return;
@@ -116,7 +122,7 @@ export default function UploadForm({ onUploadText, onUploadPDF, onAddTask, loadi
     e.preventDefault();
     if (!manualCourse || !manualTitle || !manualDate) return;
     onAddTask({
-      course: manualCourse,
+      course_id: manualCourse,
       title: manualTitle,
       due_date: manualDate,
       item_type: manualType,
@@ -239,7 +245,7 @@ export default function UploadForm({ onUploadText, onUploadPDF, onAddTask, loadi
           <div className="split">
             <select aria-label="Course for new task" value={manualCourse} onChange={e => setManualCourse(e.target.value)} required>
               <option value="">Select course…</option>
-              {courseNames.map(n => <option key={n} value={n}>{n}</option>)}
+              {courseOptions.map(course => <option key={course.id} value={course.id}>{course.name}</option>)}
             </select>
             <select aria-label="Task type" value={manualType} onChange={e => setManualType(e.target.value)}>
               {ITEM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
@@ -269,7 +275,7 @@ export default function UploadForm({ onUploadText, onUploadPDF, onAddTask, loadi
           <button type="submit" disabled={!manualCourse || !manualTitle || !manualDate || loading}>
             Add Task
           </button>
-          {courseNames.length === 0 && (
+          {courseOptions.length === 0 && (
             <small className="hint">Upload a syllabus first to create a course, then add tasks here.</small>
           )}
         </form>

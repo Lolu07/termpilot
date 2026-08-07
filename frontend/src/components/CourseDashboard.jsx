@@ -8,7 +8,7 @@ function completionForCourse(course) {
   return { total, done, pct };
 }
 
-export default function CourseDashboard({ courses, selectedCourse, onSelectCourse, onDeleteCourse }) {
+export default function CourseDashboard({ courses, selectedCourseId, onSelectCourse, onDeleteCourse }) {
   const cards = useMemo(() => courses.map(c => {
     const { total, done, pct } = completionForCourse(c);
     const upcoming = c.items
@@ -25,14 +25,14 @@ export default function CourseDashboard({ courses, selectedCourse, onSelectCours
       <div className="course-list">
         {cards.map(c => (
           <div
-            key={c.name}
-            className={`course-card${c.name === selectedCourse ? " selected" : ""}`}
+            key={c.id}
+            className={`course-card${c.id === selectedCourseId ? " selected" : ""}`}
           >
             <button
               className="course-card-main"
               type="button"
-              onClick={() => onSelectCourse(c.name)}
-              aria-pressed={c.name === selectedCourse}
+              onClick={() => onSelectCourse(c.id)}
+              aria-pressed={c.id === selectedCourseId}
             >
               <div className="course-card-header">
                 <span className="course-name">{c.name}</span>
@@ -62,7 +62,7 @@ export default function CourseDashboard({ courses, selectedCourse, onSelectCours
               type="button"
               title="Delete course"
               aria-label={`Delete ${c.name}`}
-              onClick={() => onDeleteCourse(c.name)}
+              onClick={() => onDeleteCourse(c.id, c.name)}
             >
               <TrashIcon size={16} />
             </button>
