@@ -7,7 +7,7 @@ const groq = new Groq({
   timeout: 20_000,
   maxRetries: 1,
 });
-const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+const GROQ_MODEL = process.env.GROQ_MODEL || "llama3-70b-8192";
 const MAX_ITEMS = 250;
 
 const ITEM_TYPES = new Set([
