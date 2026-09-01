@@ -118,7 +118,7 @@ export default function AuthScreen({
             <form className="auth-form" onSubmit={handleSubmit}>
               <div className="demo-entry">
                 <div className="eyebrow">Interactive product demo</div>
-                <h2 id="sign-in-heading">Explore TermPilot—no account required.</h2>
+                <h2 id="sign-in-heading">Explore TermPilot</h2>
                 <p>
                   Launch a private, preloaded workspace and try the complete workflow:
                   syllabus import, editable AI review, priority planning, and task completion.
