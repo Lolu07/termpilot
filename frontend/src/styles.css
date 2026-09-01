@@ -400,8 +400,13 @@ a { color: inherit; }
 .auth-panel {
   min-width: 0;
   padding: clamp(28px, 4.5vw, 62px);
+  /* Extra top padding clears the absolutely positioned topline. */
+  padding-top: clamp(62px, 6vw, 92px);
   display: grid;
-  align-content: center;
+  /* Anchored to the top rather than centred: the story column is the taller
+     of the two, so centring this one would split its slack into dead space
+     above and below the form. */
+  align-content: start;
   position: relative;
   color: var(--text);
   background: var(--surface);
