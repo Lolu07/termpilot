@@ -1,5 +1,16 @@
 import React, { useMemo } from "react";
 import { daysFromToday } from "../dateUtils.js";
+import useCountUp from "../useCountUp.js";
+
+function Metric({ value, label, alert = false }) {
+  const shown = useCountUp(value);
+  return (
+    <div className={alert ? "metric-alert" : ""}>
+      <strong>{shown}</strong>
+      <span>{label}</span>
+    </div>
+  );
+}
 
 function dueCopy(days) {
   if (days === null) return "Date unavailable";
@@ -49,9 +60,9 @@ export default function OverviewHero({ items, courseCount }) {
             <span>{summary.next ? `${summary.next.courseName} · ${dueCopy(summary.next.days)}` : "No pending deadlines"}</span>
           </div>
           <div className="hero-metrics">
-            <div><strong>{summary.pending}</strong><span>Pending</span></div>
-            <div><strong>{summary.dueSoon}</strong><span>Next 7 days</span></div>
-            <div className={summary.overdue ? "metric-alert" : ""}><strong>{summary.overdue}</strong><span>Overdue</span></div>
+            <Metric value={summary.pending} label="Pending" />
+            <Metric value={summary.dueSoon} label="Next 7 days" />
+            <Metric value={summary.overdue} label="Overdue" alert={summary.overdue > 0} />
           </div>
         </div>
       ) : (

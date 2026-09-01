@@ -1,5 +1,6 @@
 import React, { useRef, useState } from "react";
 import { ArrowUpRightIcon, MoonIcon, SunIcon } from "./Icons.jsx";
+import ProductPreview from "./ProductPreview.jsx";
 
 export default function AuthScreen({
   dark,
@@ -85,6 +86,8 @@ export default function AuthScreen({
             <h1 id="auth-heading">Turn a dense syllabus into a clear flight plan.</h1>
             <p>TermPilot extracts deadlines, gives you an editable review checkpoint, and turns the semester into a focused weekly plan.</p>
           </div>
+
+          <ProductPreview />
 
           <div className="auth-route" aria-label="How TermPilot works">
             <article><span>01</span><strong>Import</strong><small>Paste text or upload a PDF.</small></article>

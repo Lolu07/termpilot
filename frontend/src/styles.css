@@ -227,7 +227,7 @@ a { color: inherit; }
   overflow: hidden;
   display: grid;
   align-content: space-between;
-  gap: 44px;
+  gap: clamp(22px, 3vw, 34px);
   color: #f8f4e9;
   background: #12352f;
 }
@@ -260,6 +260,134 @@ a { color: inherit; }
 .auth-orbit span:nth-child(1) { right: 59%; top: 47%; }
 .auth-orbit span:nth-child(2) { right: 36%; top: 39%; }
 .auth-orbit span:nth-child(3) { right: 13%; top: 31%; }
+/* ── Landing product preview ──────────────────────────────────────────────
+   A light miniature of the real dashboard, deliberately kept on the light
+   palette in both themes so it reads as a product shot rather than as part
+   of the surrounding panel. */
+/* The mount animation lives on the wrapper, not the card: it holds transform
+   under fill-mode "both", which would otherwise outrank the card's hover
+   transform and silently kill it. */
+.preview {
+  position: relative;
+  z-index: 2;
+  animation: preview-rise 0.72s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.preview-card {
+  width: min(496px, 100%);
+  padding: 15px;
+  display: grid;
+  gap: 13px;
+  color: #17201c;
+  background: #fffefa;
+  border: 1px solid rgba(23, 32, 28, 0.07);
+  border-radius: 17px;
+  box-shadow: 0 26px 58px rgba(0, 0, 0, 0.34), 0 3px 8px rgba(0, 0, 0, 0.2);
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.32s ease;
+}
+.preview-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 34px 70px rgba(0, 0, 0, 0.4), 0 4px 10px rgba(0, 0, 0, 0.22);
+}
+@keyframes preview-rise {
+  from { opacity: 0; transform: translateY(22px) scale(0.972); }
+  to { opacity: 1; transform: none; }
+}
+
+.preview-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.preview-course { min-width: 0; display: flex; align-items: center; gap: 10px; }
+.preview-mark { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; color: #fffefa; background: #116b5a; border-radius: 9px; font-family: var(--font-data); font-size: 11px; font-weight: 800; }
+.preview-course strong { display: block; font-size: 12.5px; letter-spacing: -0.012em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.preview-course small { display: block; margin-top: 1px; color: #647068; font-family: var(--font-data); font-size: 9.5px; }
+.preview-badge { flex: 0 0 auto; padding: 4px 8px; display: inline-flex; align-items: center; gap: 5px; color: #0b4f44; background: #e0efe9; border-radius: 999px; font-family: var(--font-data); font-size: 8.5px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; }
+.preview-badge::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  background: #116b5a;
+  border-radius: 50%;
+  animation: preview-live 2.4s ease-in-out infinite;
+}
+@keyframes preview-live {
+  0%, 100% { opacity: 0.3; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.preview-chart { padding-top: 12px; border-top: 1px solid #ece9df; }
+.preview-chart-head { display: flex; justify-content: space-between; color: #647068; font-family: var(--font-data); font-size: 8.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.preview-bars { height: 54px; margin-top: 9px; display: flex; align-items: flex-end; gap: 6px; }
+.preview-bar { flex: 1; height: 100%; display: flex; align-items: flex-end; }
+.preview-bar i {
+  width: 100%;
+  height: var(--bar-height);
+  display: block;
+  background: #116b5a;
+  border-radius: 4px 4px 2px 2px;
+  opacity: 0.26;
+  transform-origin: bottom;
+  animation: preview-bar-grow 0.56s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--bar-delay);
+}
+/* The peak week keeps breathing after the bars settle, so the busiest point in
+   the term stays the thing your eye returns to. */
+.preview-bar.peak i {
+  background: #d86b38;
+  opacity: 1;
+  animation:
+    preview-bar-grow 0.56s cubic-bezier(0.22, 1, 0.36, 1) var(--bar-delay) both,
+    preview-peak 3.4s ease-in-out 1.5s infinite;
+}
+@keyframes preview-bar-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes preview-peak {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(216, 107, 56, 0); }
+  50% { box-shadow: 0 0 0 5px rgba(216, 107, 56, 0.17); }
+}
+
+.preview-tasks { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
+/* A highlight walks the three rows on a loop, the way the app draws attention
+   to what is next. Two animations rather than one: the entrance owns transform
+   and opacity, the loop owns only colour, so neither clobbers the other. */
+.preview-task {
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: #f6f4ec;
+  border-radius: 9px;
+  animation:
+    preview-row-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) var(--row-delay) both,
+    preview-scan 7.2s ease-in-out var(--scan-delay) infinite;
+}
+@keyframes preview-row-in { from { opacity: 0; transform: translateX(-9px); } to { opacity: 1; transform: none; } }
+@keyframes preview-scan {
+  0%, 6%, 26%, 100% { background: #f6f4ec; }
+  12%, 20% { background: #e8f1ec; }
+}
+.preview-task-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; }
+.preview-task.tone-danger .preview-task-dot { background: #b23b32; box-shadow: 0 0 0 3px rgba(178, 59, 50, 0.14); }
+.preview-task.tone-warning .preview-task-dot { background: #d86b38; box-shadow: 0 0 0 3px rgba(216, 107, 56, 0.14); }
+.preview-task.tone-normal .preview-task-dot { background: #116b5a; box-shadow: 0 0 0 3px rgba(17, 107, 90, 0.13); }
+.preview-task-body { flex: 1; min-width: 0; }
+.preview-task-body strong { display: block; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.preview-task-body small { color: #647068; font-family: var(--font-data); font-size: 9px; }
+.preview-task-due { flex: 0 0 auto; color: #49554e; font-family: var(--font-data); font-size: 10px; font-weight: 700; }
+.preview-task-weight { flex: 0 0 auto; min-width: 30px; color: #116b5a; font-family: var(--font-data); font-size: 10px; font-weight: 800; text-align: right; }
+
+.preview-foot { display: flex; align-items: center; gap: 10px; }
+.preview-progress { flex: 1; height: 5px; overflow: hidden; background: #ece9df; border-radius: 999px; }
+.preview-progress i {
+  width: 68%;
+  height: 100%;
+  display: block;
+  background: linear-gradient(90deg, #116b5a, #2f9d84);
+  border-radius: inherit;
+  transform-origin: left;
+  animation: preview-fill 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 1.12s;
+}
+@keyframes preview-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.preview-foot > span { color: #647068; font-family: var(--font-data); font-size: 9.5px; font-weight: 700; }
+
 .auth-route { position: relative; z-index: 2; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid #52786f; border-bottom: 1px solid #52786f; }
 .auth-route article { min-width: 0; padding: 18px 17px 20px 0; display: grid; gap: 2px; border-right: 1px solid #52786f; }
 .auth-route article:not(:first-child) { padding-left: 17px; }
@@ -746,6 +874,49 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .confirm-primary:hover { color: #fff; background: var(--danger-text); border-color: var(--danger-text); }
 
 .toast-container { position: fixed; right: 22px; bottom: 22px; z-index: 3000; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+/* ── Motion layer ─────────────────────────────────────────────────────────
+   Entrance stagger, hover lift and value transitions. Every rule here is
+   presentation-only: nothing depends on an animation completing, so the
+   reduced-motion override collapses all of it safely. */
+
+@keyframes rise-in { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+
+.card { animation: rise-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.sidebar-stack > .card:nth-child(2) { animation-delay: 0.06s; }
+.sidebar-stack > .card:nth-child(3) { animation-delay: 0.12s; }
+.dashboard-stack > .card:nth-child(2) { animation-delay: 0.06s; }
+.dashboard-stack > .card:nth-child(3) { animation-delay: 0.12s; }
+
+.card, .course-card { transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition), background var(--transition); }
+.card:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(17, 35, 29, 0.09); }
+.dark .card:hover { box-shadow: 0 12px 30px rgba(0, 0, 0, 0.34); }
+.course-card:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(17, 35, 29, 0.08); }
+.dark .course-card:hover { box-shadow: 0 8px 22px rgba(0, 0, 0, 0.32); }
+.course-card::before { transition: opacity var(--transition), background var(--transition); }
+
+/* Course cards and task rows cascade in rather than snapping as a block. */
+.course-list > .course-card { animation: rise-in 0.38s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.course-list > .course-card:nth-child(1) { animation-delay: 0.04s; }
+.course-list > .course-card:nth-child(2) { animation-delay: 0.09s; }
+.course-list > .course-card:nth-child(3) { animation-delay: 0.14s; }
+.course-list > .course-card:nth-child(4) { animation-delay: 0.19s; }
+.course-list > .course-card:nth-child(n+5) { animation-delay: 0.23s; }
+
+.items > .item-row { animation: rise-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.items > .item-row:nth-child(1) { animation-delay: 0.03s; }
+.items > .item-row:nth-child(2) { animation-delay: 0.07s; }
+.items > .item-row:nth-child(3) { animation-delay: 0.11s; }
+.items > .item-row:nth-child(4) { animation-delay: 0.15s; }
+.items > .item-row:nth-child(5) { animation-delay: 0.19s; }
+.items > .item-row:nth-child(n+6) { animation-delay: 0.22s; }
+
+/* Completion reads as a state change, not just a lower opacity. */
+.item-row { transition: opacity var(--transition), background var(--transition); }
+.item-row.completed .item-title { text-decoration: line-through; text-decoration-thickness: 1.5px; text-decoration-color: var(--text-subtle); }
+
+.progress > div { transition: width 0.55s cubic-bezier(0.22, 1, 0.36, 1); }
+.hero-metrics strong { font-variant-numeric: tabular-nums; }
+
 .toast { max-width: 380px; padding: 11px 14px; display: flex; align-items: center; gap: 9px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); box-shadow: var(--shadow-dialog); font-size: 12px; font-weight: 650; pointer-events: auto; animation: slide-up 0.22s ease; }
 .toast.success { border-left-color: var(--success); }
 .toast.error { border-left-color: var(--danger); }
@@ -865,5 +1036,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  /* Delay must be cleared alongside duration: staggered entrances use
+     animation-fill-mode: both, so a surviving delay would hold elements in
+     their hidden "from" state for the length of the stagger. */
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
